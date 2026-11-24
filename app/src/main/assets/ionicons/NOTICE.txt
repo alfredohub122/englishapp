@@ -1,0 +1,7 @@
+Ionicons SVG assets are downloaded by the Gradle build from:
+https://github.com/ionic-team/ionicons/tree/v8.1.0/src/svg
+Project license: MIT. The upstream license is available at:
+https://github.com/ionic-team/ionicons/blob/v8.1.0/LICENSE
+
+The application replaces the SVG currentColor / black stroke with the active
+Kotlin Compose tint before rendering through AndroidSVG.

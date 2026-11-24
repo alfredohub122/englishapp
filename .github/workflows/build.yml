@@ -1,0 +1,159 @@
+name: English Course Android Build
+
+on:
+  push:
+    branches:
+      - main
+      - master
+
+  pull_request:
+    branches:
+      - main
+      - master
+
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: english-course-android-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build English Course APK
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: Set up Gradle 8.11.1
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: '8.11.1'
+          validate-wrappers: false
+
+      - name: Download Ionicons and bilingual WikDict databases
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          ASSETS="app/src/main/assets"
+          ICON_DIR="$ASSETS/ionicons"
+          DICT_DIR="$ASSETS/dictionary"
+          mkdir -p "$ICON_DIR" "$DICT_DIR"
+
+          ICONS=(
+            home-outline book-outline search-outline reader-outline
+            stats-chart-outline settings-outline chevron-back-outline
+            chevron-forward-outline bookmark-outline checkmark-circle-outline
+            time-outline school-outline language-outline library-outline
+            swap-horizontal-outline close-outline information-circle-outline
+            play-circle-outline document-text-outline filter-outline
+            checkmark-outline help-circle-outline trophy-outline globe-outline
+            arrow-forward-outline refresh-outline volume-high-outline
+            list-outline bulb-outline heart-outline calendar-outline
+          )
+
+          for icon in "${ICONS[@]}"; do
+            curl --fail --location --retry 3 --retry-all-errors \
+              "https://raw.githubusercontent.com/ionic-team/ionicons/v8.1.0/src/svg/${icon}.svg" \
+              --output "$ICON_DIR/${icon}.svg"
+          done
+
+          WIKDICT_VERSION="2_2026-06"
+          for dictionary in en-pt.sqlite3 pt-en.sqlite3; do
+            curl --fail --location --retry 3 --retry-all-errors \
+              "https://download.wikdict.com/dictionaries/sqlite/${WIKDICT_VERSION}/${dictionary}" \
+              --output "$DICT_DIR/${dictionary}"
+          done
+
+          test "$(find "$ICON_DIR" -maxdepth 1 -name '*.svg' | wc -l)" -ge "${#ICONS[@]}"
+          test "$(stat -c%s "$DICT_DIR/en-pt.sqlite3")" -gt 1000000
+          test "$(stat -c%s "$DICT_DIR/pt-en.sqlite3")" -gt 1000000
+
+          echo "Ionicons downloaded: ${#ICONS[@]} SVG files"
+          ls -lh "$DICT_DIR"/*.sqlite3
+
+      - name: Verify Android project configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f settings.gradle.kts
+          test -f build.gradle.kts
+          test -f app/build.gradle.kts
+          test -f app/src/main/AndroidManifest.xml
+          test -f app/src/main/java/ao/creativespace/englishcourse/MainActivity.kt
+          test -f app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
+          test -f app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml
+          grep -q 'org.jetbrains.kotlin.android' app/build.gradle.kts
+          grep -q 'androidx.compose' app/build.gradle.kts
+          if grep -R -nE 'WebView|flutter|pubspec.yaml' app/src/main; then
+            echo "ERROR: The app implementation must remain native Kotlin/Jetpack Compose."
+            exit 1
+          fi
+          echo "Native Kotlin Android project verified."
+
+      - name: Build release APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          gradle --no-daemon --stacktrace :app:assembleRelease
+          APK="app/build/outputs/apk/release/app-release.apk"
+          test -s "$APK"
+          mkdir -p release-assets
+          cp "$APK" "release-assets/english-course-build${{ github.run_number }}.apk"
+          ls -lh release-assets/*.apk
+
+      - name: Upload APK build artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: english-course-apk-build-${{ github.run_number }}
+          path: release-assets/*.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish release with APK download
+        if: github.event_name != 'pull_request'
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: latest-build
+          name: "English Course build #${{ github.run_number }}"
+          body: |
+            APK Android nativo criado automaticamente.
+
+            - Aplicação Kotlin + Jetpack Compose, sem Flutter e sem WebView.
+            - Tema claro e ícone da bandeira do Reino Unido.
+            - Curso, histórias, vocabulário e dicionário bilingue offline.
+
+            O ficheiro APK pode ser instalado em dispositivos Android compatíveis.
+          files: release-assets/*.apk
+          fail_on_unmatched_files: true
+          make_latest: true
+
+      - name: Write direct download link to workflow summary
+        if: github.event_name != 'pull_request'
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK_NAME="english-course-build${{ github.run_number }}.apk"
+          APK_URL="https://github.com/${{ github.repository }}/releases/download/latest-build/${APK_NAME}"
+          {
+            echo "## English Course — APK disponível"
+            echo ""
+            echo "[**Descarregar English Course para Android**](${APK_URL})"
+            echo ""
+            echo "Link direto: ${APK_URL}"
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "APK download: ${APK_URL}"
