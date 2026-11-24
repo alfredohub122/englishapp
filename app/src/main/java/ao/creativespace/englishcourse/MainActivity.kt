@@ -109,6 +109,7 @@ private enum class AppTab(val label: String, val icon: String) {
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
+        CrashDiagnostics.install(applicationContext)
         super.onCreate(savedInstanceState)
         window.statusBarColor = android.graphics.Color.WHITE
         window.navigationBarColor = android.graphics.Color.WHITE
@@ -118,6 +119,9 @@ class MainActivity : ComponentActivity() {
                 android.view.View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
 
         setContent {
+            var diagnosticReport by rememberSaveable {
+                mutableStateOf(CrashDiagnostics.readReport(applicationContext))
+            }
             MaterialTheme(
                 colorScheme = lightColorScheme(
                     primary = AppBlue,
@@ -130,7 +134,30 @@ class MainActivity : ComponentActivity() {
                     outline = AppBorder
                 )
             ) {
-                EnglishCourseApp()
+                if (diagnosticReport != null) {
+                    CrashDiagnosticScreen(
+                        report = diagnosticReport.orEmpty(),
+                        onRetry = {
+                            CrashDiagnostics.clearReport(applicationContext)
+                            diagnosticReport = null
+                            recreate()
+                        }
+                    )
+                } else {
+                    try {
+                        EnglishCourseApp()
+                    } catch (error: Throwable) {
+                        val report = CrashDiagnostics.buildReport(applicationContext, error, Thread.currentThread().name)
+                        CrashDiagnostics.saveReport(applicationContext, report)
+                        CrashDiagnosticScreen(
+                            report = report,
+                            onRetry = {
+                                CrashDiagnostics.clearReport(applicationContext)
+                                recreate()
+                            }
+                        )
+                    }
+                }
             }
         }
     }
