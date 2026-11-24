@@ -144,19 +144,10 @@ class MainActivity : ComponentActivity() {
                         }
                     )
                 } else {
-                    try {
-                        EnglishCourseApp()
-                    } catch (error: Throwable) {
-                        val report = CrashDiagnostics.buildReport(applicationContext, error, Thread.currentThread().name)
-                        CrashDiagnostics.saveReport(applicationContext, report)
-                        CrashDiagnosticScreen(
-                            report = report,
-                            onRetry = {
-                                CrashDiagnostics.clearReport(applicationContext)
-                                recreate()
-                            }
-                        )
-                    }
+                    // Compose does not allow try/catch around @Composable invocations.
+                    // CrashDiagnostics' uncaught-exception handler persists fatal errors
+                    // before Android terminates the process; the next launch shows the report.
+                    EnglishCourseApp()
                 }
             }
         }
