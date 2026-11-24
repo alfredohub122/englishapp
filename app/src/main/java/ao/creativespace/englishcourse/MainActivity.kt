@@ -279,7 +279,7 @@ private fun HomeScreen(
             Spacer(Modifier.height(14.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Image(
-                    painter = painterResource(R.mipmap.ic_launcher),
+                    painter = painterResource(R.drawable.app_brand_icon),
                     contentDescription = "Bandeira do Reino Unido",
                     modifier = Modifier.size(42.dp).clip(RoundedCornerShape(10.dp))
                 )
