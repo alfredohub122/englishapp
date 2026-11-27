@@ -17,6 +17,7 @@ import '../widgets/material_symbols.dart';
 import '../widgets/search_engine_pngs.dart';
 import '../widgets/drawer_menu_button.dart';
 import 'search_screen.dart';
+import 'news_feed_section.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({
@@ -24,6 +25,8 @@ class HomeScreen extends StatelessWidget {
     this.onOpenDrawer,
     this.onOpenTabs,
     this.onNewTab,
+    this.onOpenAiSearch,
+    this.onOpenUtilities,
     this.onHome,
     this.newTabButtonKey,
     required this.recentTabPreviewKeys,
@@ -32,6 +35,8 @@ class HomeScreen extends StatelessWidget {
   final VoidCallback? onOpenDrawer;
   final VoidCallback? onOpenTabs;
   final VoidCallback? onNewTab;
+  final VoidCallback? onOpenAiSearch;
+  final VoidCallback? onOpenUtilities;
   final VoidCallback? onHome;
   final GlobalKey? newTabButtonKey;
   final Map<String, GlobalKey> recentTabPreviewKeys;
@@ -47,6 +52,8 @@ class HomeScreen extends StatelessWidget {
         onHome: onHome,
         onOpenTabs: onOpenTabs,
         onNewTab: onNewTab,
+        onOpenAiSearch: onOpenAiSearch,
+        onOpenUtilities: onOpenUtilities,
         newTabButtonKey: newTabButtonKey,
       ),
       body: Stack(
@@ -61,6 +68,8 @@ class HomeScreen extends StatelessWidget {
                 const SizedBox(height: 12),
                 const SizedBox(height: 4),
                 RecentTabPreviewsCard(previewKeys: recentTabPreviewKeys),
+                const SizedBox(height: 18),
+                const NewsFeedSection(),
               ],
             ),
           ),
@@ -185,47 +194,13 @@ class _HomeSearchInputState extends State<_HomeSearchInput> {
         valueListenable: activeSearchEngine,
         builder: (context, engine, __) => Image.asset(
           searchEngineAsset(aiEnabled ? 'AI Search' : engine.name),
-          width: 23,
-          height: 23,
+          width: 24,
+          height: 24,
           fit: BoxFit.contain,
           filterQuality: FilterQuality.high,
           // O motor já é identificado pelo seu PNG; não mostrar uma lupa
           // genérica por cima nem substituí-la por outro glifo.
-          errorBuilder: (_, __, ___) => const SizedBox(width: 23, height: 23),
-        ),
-      ),
-    );
-  }
-
-  Widget _field(BuildContext context, {required bool readOnly}) {
-    return SizedBox(
-      height: 48,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 10),
-        child: Row(
-          children: [
-            _engineLogo(context),
-            const SizedBox(width: 9),
-            Expanded(
-              child: TextField(
-                controller: _controller,
-                readOnly: readOnly,
-                showCursor: !readOnly,
-                textInputAction: TextInputAction.search,
-                style: TextStyle(color: mainText(context), fontSize: 15),
-                cursorColor: accentColor(context),
-                decoration: InputDecoration(
-                  hintText: appText('search_hint'),
-                  hintStyle: TextStyle(color: mutedText(context), fontSize: 15),
-                  border: InputBorder.none,
-                  enabledBorder: InputBorder.none,
-                  focusedBorder: InputBorder.none,
-                  isDense: true,
-                  contentPadding: EdgeInsets.zero,
-                ),
-              ),
-            ),
-          ],
+          errorBuilder: (_, __, ___) => const SizedBox(width: 24, height: 24),
         ),
       ),
     );
@@ -239,14 +214,14 @@ class _HomeSearchInputState extends State<_HomeSearchInput> {
         final hero = (direction == HeroFlightDirection.push ? toContext.widget : fromContext.widget) as Hero;
         return Material(
           color: pillColor(flightContext),
-          borderRadius: BorderRadius.circular(999),
+          borderRadius: BorderRadius.circular(24),
           clipBehavior: Clip.antiAlias,
           child: hero.child,
         );
       },
       child: Material(
         color: pillColor(context),
-        borderRadius: BorderRadius.circular(999),
+        borderRadius: BorderRadius.circular(24),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
           onTap: () => Navigator.of(context, rootNavigator: true).push<void>(
@@ -257,10 +232,39 @@ class _HomeSearchInputState extends State<_HomeSearchInput> {
               ),
             ),
           ),
-          borderRadius: BorderRadius.circular(999),
+          borderRadius: BorderRadius.circular(24),
           child: IgnorePointer(
-            // O campo readonly não pode consumir o toque; a cápsula inteira abre a pesquisa.
-            child: _field(context, readOnly: true),
+            // Geometria idêntica à barra da SearchScreen: 2dp + botão de 40dp,
+            // campo central e margem final de 5dp para não deslocar o Hero.
+            child: SizedBox(
+              height: 48,
+              child: Row(
+                children: <Widget>[
+                  const SizedBox(width: 2),
+                  SizedBox(width: 40, child: Center(child: _engineLogo(context))),
+                  Expanded(
+                    child: TextField(
+                      controller: _controller,
+                      readOnly: true,
+                      showCursor: false,
+                      textAlignVertical: TextAlignVertical.center,
+                      style: TextStyle(color: mainText(context), fontSize: 15),
+                      decoration: InputDecoration(
+                        hintText: appText('search_hint'),
+                        hintStyle: TextStyle(color: mutedText(context), fontSize: 14),
+                        contentPadding: EdgeInsets.zero,
+                        border: InputBorder.none,
+                        enabledBorder: InputBorder.none,
+                        focusedBorder: InputBorder.none,
+                        isDense: true,
+                        isCollapsed: true,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 5),
+                ],
+              ),
+            ),
           ),
         ),
       ),
@@ -313,12 +317,16 @@ class _HomeBottomBar extends StatelessWidget {
     this.onHome,
     this.onOpenTabs,
     this.onNewTab,
+    this.onOpenAiSearch,
+    this.onOpenUtilities,
     this.newTabButtonKey,
   });
 
   final VoidCallback? onHome;
   final VoidCallback? onOpenTabs;
   final VoidCallback? onNewTab;
+  final VoidCallback? onOpenAiSearch;
+  final VoidCallback? onOpenUtilities;
   final GlobalKey? newTabButtonKey;
 
   @override
@@ -369,10 +377,15 @@ class _HomeBottomBar extends StatelessWidget {
                       borderRadius: BorderRadius.circular(999),
                       clipBehavior: Clip.antiAlias,
                       child: InkWell(
-                        onTap: onNewTab,
+                        onTap: () => _showHomeQuickActions(
+                          context,
+                          onNewTab: onNewTab,
+                          onOpenAiSearch: onOpenAiSearch,
+                          onOpenUtilities: onOpenUtilities,
+                        ),
                         borderRadius: BorderRadius.circular(999),
                         child: SizedBox(
-                          width: 66,
+                          width: 82,
                           height: 46,
                           child: Center(
                             child: AppMaterialIcon(
@@ -516,44 +529,60 @@ class _RecentTabPreviewsCardState extends State<RecentTabPreviewsCard> {
           widget.previewKeys.removeWhere((id, _) => !tabs.any((tab) => tab.id == id));
           if (tabs.isEmpty) return const SizedBox.shrink();
 
-          return Container(
-            padding: const EdgeInsets.all(13),
-            decoration: BoxDecoration(
-              color: settingsCardColor(context),
-              borderRadius: BorderRadius.circular(29),
-            ),
-            child: SizedBox(
-              height: 122,
-              child: ListView.separated(
-                scrollDirection: Axis.horizontal,
-                physics: const BouncingScrollPhysics(),
-                itemCount: tabs.length,
-                separatorBuilder: (_, __) => const SizedBox(width: 11),
-                itemBuilder: (context, index) {
-                  final tab = tabs[index];
-                  final key = widget.previewKeys.putIfAbsent(tab.id, GlobalKey.new);
-                  return Material(
-                    key: key,
-                    color: pillColor(context),
-                    borderRadius: BorderRadius.circular(18),
-                    clipBehavior: Clip.antiAlias,
-                    child: InkWell(
-                      onTap: () => _open(tab),
-                      borderRadius: BorderRadius.circular(18),
-                      child: SizedBox(
-                        width: 92,
-                        child: Image.memory(
-                          tab.thumbnail!,
-                          fit: BoxFit.cover,
-                          gaplessPlayback: true,
-                          filterQuality: FilterQuality.medium,
-                        ),
-                      ),
-                    ),
-                  );
-                },
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Padding(
+                padding: const EdgeInsets.fromLTRB(5, 1, 5, 9),
+                child: Text(
+                  'Recentes',
+                  style: TextStyle(
+                    color: mainText(context),
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
               ),
-            ),
+              Container(
+                padding: const EdgeInsets.all(13),
+                decoration: BoxDecoration(
+                  color: settingsCardColor(context),
+                  borderRadius: BorderRadius.circular(29),
+                ),
+                child: SizedBox(
+                  height: 122,
+                  child: ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    physics: const BouncingScrollPhysics(),
+                    itemCount: tabs.length,
+                    separatorBuilder: (_, __) => const SizedBox(width: 11),
+                    itemBuilder: (context, index) {
+                      final tab = tabs[index];
+                      final key = widget.previewKeys.putIfAbsent(tab.id, GlobalKey.new);
+                      return Material(
+                        key: key,
+                        color: pillColor(context),
+                        borderRadius: BorderRadius.circular(18),
+                        clipBehavior: Clip.antiAlias,
+                        child: InkWell(
+                          onTap: () => _open(tab),
+                          borderRadius: BorderRadius.circular(18),
+                          child: SizedBox(
+                            width: 92,
+                            child: Image.memory(
+                              tab.thumbnail!,
+                              fit: BoxFit.cover,
+                              gaplessPlayback: true,
+                              filterQuality: FilterQuality.medium,
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ),
+            ],
           );
         },
       );
@@ -561,4 +590,194 @@ class _RecentTabPreviewsCardState extends State<RecentTabPreviewsCard> {
 
 void openNewTab(BuildContext context, String url, {String? title}) {
   openOrbitTab(context, url, title: title);
+}
+
+enum _HomeQuickAction { aiSearch, newTab, utilities }
+
+Future<void> _showHomeQuickActions(
+  BuildContext context, {
+  VoidCallback? onNewTab,
+  VoidCallback? onOpenAiSearch,
+  VoidCallback? onOpenUtilities,
+}) async {
+  final action = await showGeneralDialog<_HomeQuickAction>(
+    context: context,
+    barrierDismissible: true,
+    barrierLabel: 'Ações rápidas',
+    barrierColor: Colors.black.withOpacity(.38),
+    transitionDuration: const Duration(milliseconds: 240),
+    pageBuilder: (dialogContext, animation, secondaryAnimation) {
+      final text = mainText(dialogContext);
+      final muted = mutedText(dialogContext);
+      final panel = settingsCardColor(dialogContext);
+      return SafeArea(
+        child: Align(
+          alignment: Alignment.bottomCenter,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 20, 20, 22),
+            child: Material(
+              color: Colors.transparent,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 390),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.fromLTRB(13, 16, 13, 13),
+                      decoration: BoxDecoration(
+                        color: panel,
+                        borderRadius: BorderRadius.circular(30),
+                        boxShadow: <BoxShadow>[
+                          BoxShadow(color: Colors.black.withOpacity(.18), blurRadius: 30, offset: const Offset(0, 12)),
+                        ],
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(7, 0, 7, 12),
+                            child: Text(
+                              'O que queres fazer?',
+                              style: TextStyle(color: text, fontSize: 18, fontWeight: FontWeight.w700),
+                            ),
+                          ),
+                          _QuickActionTile(
+                            icon: AppIcons.sparkles,
+                            title: 'Nova pesquisa com IA',
+                            subtitle: 'Faz uma pergunta ao AI Search',
+                            foreground: text,
+                            muted: muted,
+                            onTap: () => Navigator.of(dialogContext).pop(_HomeQuickAction.aiSearch),
+                          ),
+                          const SizedBox(height: 5),
+                          _QuickActionTile(
+                            icon: AppIcons.plus,
+                            title: 'Abrir uma nova aba',
+                            subtitle: 'Começa uma nova navegação',
+                            foreground: text,
+                            muted: muted,
+                            onTap: () => Navigator.of(dialogContext).pop(_HomeQuickAction.newTab),
+                          ),
+                          const SizedBox(height: 5),
+                          _QuickActionTile(
+                            icon: AppIcons.squaresFour,
+                            title: 'Utilitários',
+                            subtitle: 'Calculadora, tradução e conversores',
+                            foreground: text,
+                            muted: muted,
+                            onTap: () => Navigator.of(dialogContext).pop(_HomeQuickAction.utilities),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 11),
+                    Material(
+                      color: panel,
+                      borderRadius: BorderRadius.circular(999),
+                      clipBehavior: Clip.antiAlias,
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(999),
+                        onTap: () => Navigator.of(dialogContext).pop(),
+                        child: SizedBox(
+                          width: 132,
+                          height: 47,
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: <Widget>[
+                              AppMaterialIcon(AppIcons.x, color: text, size: 19),
+                              const SizedBox(width: 7),
+                              Text('Fechar', style: TextStyle(color: text, fontSize: 13, fontWeight: FontWeight.w600)),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    },
+    transitionBuilder: (context, animation, secondaryAnimation, child) {
+      final curve = CurvedAnimation(parent: animation, curve: Curves.easeOutCubic);
+      return FadeTransition(
+        opacity: animation,
+        child: ScaleTransition(
+          scale: Tween<double>(begin: .94, end: 1).animate(curve),
+          child: child,
+        ),
+      );
+    },
+  );
+
+  if (!context.mounted || action == null) return;
+  switch (action) {
+    case _HomeQuickAction.aiSearch:
+      onOpenAiSearch?.call();
+      break;
+    case _HomeQuickAction.newTab:
+      onNewTab?.call();
+      break;
+    case _HomeQuickAction.utilities:
+      onOpenUtilities?.call();
+      break;
+  }
+}
+
+class _QuickActionTile extends StatelessWidget {
+  const _QuickActionTile({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.foreground,
+    required this.muted,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final Color foreground;
+  final Color muted;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(20),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(20),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 11),
+          child: Row(
+            children: <Widget>[
+              Container(
+                width: 43,
+                height: 43,
+                decoration: BoxDecoration(color: pillColor(context), shape: BoxShape.circle),
+                child: Center(child: AppMaterialIcon(icon, color: foreground, size: 21)),
+              ),
+              const SizedBox(width: 11),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(title, style: TextStyle(color: foreground, fontSize: 14, fontWeight: FontWeight.w600)),
+                    const SizedBox(height: 2),
+                    Text(subtitle, style: TextStyle(color: muted, fontSize: 11.5)),
+                  ],
+                ),
+              ),
+              AppMaterialIcon(AppIcons.caretRight, color: muted, size: 19),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }

@@ -169,6 +169,76 @@ class _ExtensionsScreenState extends State<ExtensionsScreen> {
     }
   }
 
+  Future<void> _installBuiltin(_BuiltinExtension extension) async {
+    if (_isInstalled(extension.id) || _workingId == extension.id) return;
+    final confirmed = await _confirmInstall(
+      name: extension.name,
+      host: 'biblioteca incluída no BrowseIt',
+    );
+    if (!confirmed || !mounted) return;
+    setState(() => _workingId = extension.id);
+    try {
+      await _native.invokeMapMethod<String, dynamic>('install', <String, dynamic>{
+        'id': extension.id,
+        'name': extension.name,
+        'description': extension.description,
+        'sourceUrl': 'https://browseit.local/extensions/${extension.id}.user.js',
+        'sourceCode': extension.source,
+      });
+      await _loadInstalled();
+      _showMessage('Extensão instalada. Abre novamente a página compatível para a ativar.');
+    } on PlatformException catch (error) {
+      _showMessage(error.message ?? 'Não foi possível instalar esta extensão.');
+    } catch (_) {
+      _showMessage('Não foi possível instalar esta extensão.');
+    } finally {
+      if (mounted) setState(() => _workingId = null);
+    }
+  }
+
+  Widget _builtinCard(_BuiltinExtension extension) {
+    final installed = _isInstalled(extension.id);
+    final working = _workingId == extension.id;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      decoration: BoxDecoration(color: settingsCardColor(context), borderRadius: BorderRadius.circular(20)),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(13, 12, 12, 12),
+        child: Row(
+          children: <Widget>[
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(color: pillColor(context), shape: BoxShape.circle),
+              child: Center(child: AppMaterialIcon(extension.icon, color: mainText(context), size: 21)),
+            ),
+            const SizedBox(width: 11),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(extension.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: mainText(context), fontSize: 13.5, fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 3),
+                  Text(extension.description, maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(color: mutedText(context), fontSize: 11.5, height: 1.25)),
+                  const SizedBox(height: 4),
+                  Text('Incluída no BrowseIt · ${extension.siteLabel}', style: TextStyle(color: mutedText(context), fontSize: 10)),
+                ],
+              ),
+            ),
+            const SizedBox(width: 6),
+            TextButton.icon(
+              onPressed: installed || working ? null : () => _installBuiltin(extension),
+              icon: working
+                  ? const SizedBox(width: 15, height: 15, child: CircularProgressIndicator.adaptive(strokeWidth: 2))
+                  : AppMaterialIcon(installed ? AppIcons.check : AppIcons.downloadSimple, size: 17),
+              label: Text(installed ? 'Instalada' : working ? 'A instalar' : 'Baixar'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Future<void> _promptImportByUrl() async {
     final controller = TextEditingController();
     final url = await showDialog<String>(
@@ -332,7 +402,13 @@ class _ExtensionsScreenState extends State<ExtensionsScreen> {
             else
               ..._installed.map(_installedCard),
             const SizedBox(height: 22),
-            Text('Loja de scripts', style: TextStyle(color: text, fontSize: 16, fontWeight: FontWeight.w700)),
+            Text('Extensões recomendadas', style: TextStyle(color: text, fontSize: 16, fontWeight: FontWeight.w700)),
+            const SizedBox(height: 4),
+            Text('Pequenas ferramentas UserScript prontas a instalar, sem precisares de introduzir ligações.', style: TextStyle(color: mutedText(context), fontSize: 11.5, height: 1.35)),
+            const SizedBox(height: 9),
+            ..._builtinExtensions.map(_builtinCard),
+            const SizedBox(height: 16),
+            Text('Explorar loja online', style: TextStyle(color: text, fontSize: 16, fontWeight: FontWeight.w700)),
             const SizedBox(height: 9),
             Row(
               children: [
@@ -548,3 +624,163 @@ class _EmptyExtensionsCard extends StatelessWidget {
     );
   }
 }
+
+
+class _BuiltinExtension {
+  const _BuiltinExtension({
+    required this.id,
+    required this.name,
+    required this.description,
+    required this.siteLabel,
+    required this.icon,
+    required this.source,
+  });
+
+  final String id;
+  final String name;
+  final String description;
+  final String siteLabel;
+  final IconData icon;
+  final String source;
+}
+
+const List<_BuiltinExtension> _builtinExtensions = <_BuiltinExtension>[
+  _BuiltinExtension(
+    id: 'browseit-night-toggle',
+    name: 'Modo escuro com botão',
+    description: 'Adiciona um botão discreto para alternar uma aparência escura em páginas compatíveis.',
+    siteLabel: 'Vários sites',
+    icon: AppIcons.moon,
+    source: r'''// ==UserScript==
+// @name BrowseIt Night Toggle
+// @namespace browseit.local
+// @version 1.0.0
+// @description Adiciona um botão local para alternar um modo escuro simples.
+// @match *://*/*
+// @run-at document-end
+// @grant none
+// ==/UserScript==
+(function () {
+  if (document.getElementById('browseit-night-toggle')) return;
+  const style = document.createElement('style');
+  style.id = 'browseit-night-style';
+  style.textContent = `
+    html.browseit-night, html.browseit-night body {
+      background: #111315 !important; color: #e7e9ec !important;
+      color-scheme: dark !important;
+    }
+    html.browseit-night body *:not(img):not(video):not(canvas):not(svg):not(#browseit-night-toggle) {
+      background-color: transparent !important; color: inherit !important;
+      border-color: #34383d !important;
+    }
+    html.browseit-night a { color: #8ab4f8 !important; }
+    html.browseit-night input, html.browseit-night textarea, html.browseit-night select {
+      background: #202327 !important; color: #f2f3f4 !important;
+    }
+  `;
+  document.documentElement.appendChild(style);
+  const button = document.createElement('button');
+  button.id = 'browseit-night-toggle';
+  button.type = 'button';
+  button.textContent = '☾';
+  button.setAttribute('aria-label', 'Alternar modo escuro');
+  button.style.cssText = 'position:fixed!important;right:16px!important;bottom:24px!important;z-index:2147483647!important;width:44px!important;height:44px!important;border:0!important;border-radius:50%!important;background:#272a30!important;color:#fff!important;font:22px sans-serif!important;box-shadow:0 3px 14px #0006!important;';
+  button.addEventListener('click', () => document.documentElement.classList.toggle('browseit-night'));
+  document.body.appendChild(button);
+  document.documentElement.classList.add('browseit-night');
+})();''',
+  ),
+  _BuiltinExtension(
+    id: 'browseit-youtube-shorts-cleaner',
+    name: 'Limpar YouTube Shorts',
+    description: 'Oculta prateleiras e blocos de Shorts para reduzir distrações no YouTube.',
+    siteLabel: 'YouTube',
+    icon: AppIcons.playCircle,
+    source: r'''// ==UserScript==
+// @name BrowseIt YouTube Shorts Cleaner
+// @namespace browseit.local
+// @version 1.0.0
+// @description Oculta prateleiras e secções de YouTube Shorts.
+// @match https://www.youtube.com/*
+// @match https://m.youtube.com/*
+// @run-at document-end
+// @grant none
+// ==/UserScript==
+(function () {
+  if (window.__browseitShortsCleaner) return;
+  window.__browseitShortsCleaner = true;
+  const css = document.createElement('style');
+  css.textContent = `ytd-reel-shelf-renderer, ytd-reel-video-renderer, a[href^="/shorts/"] { display:none!important; }`;
+  document.documentElement.appendChild(css);
+  const clean = () => {
+    document.querySelectorAll('ytd-rich-section-renderer').forEach(section => {
+      if (section.querySelector('a[href^="/shorts/"]')) section.style.display = 'none';
+    });
+  };
+  clean();
+  new MutationObserver(clean).observe(document.documentElement, { childList:true, subtree:true });
+})();''',
+  ),
+  _BuiltinExtension(
+    id: 'browseit-youtube-speed-control',
+    name: 'Controlo rápido de velocidade',
+    description: 'Botão flutuante para alternar a velocidade do vídeo entre 1× e 2×.',
+    siteLabel: 'YouTube',
+    icon: AppIcons.gauge,
+    source: r'''// ==UserScript==
+// @name BrowseIt YouTube Speed Control
+// @namespace browseit.local
+// @version 1.0.0
+// @description Botão para alternar a velocidade de reprodução dos vídeos.
+// @match https://www.youtube.com/*
+// @match https://m.youtube.com/*
+// @run-at document-end
+// @grant none
+// ==/UserScript==
+(function () {
+  if (document.getElementById('browseit-speed-toggle')) return;
+  const speeds = [1, 1.25, 1.5, 1.75, 2];
+  let index = 0;
+  const button = document.createElement('button');
+  button.id = 'browseit-speed-toggle';
+  button.type = 'button';
+  button.textContent = '1×';
+  button.style.cssText = 'position:fixed!important;right:16px!important;bottom:84px!important;z-index:2147483647!important;padding:10px 13px!important;border:0!important;border-radius:999px!important;background:#202124!important;color:#fff!important;font:600 13px sans-serif!important;box-shadow:0 3px 14px #0006!important;';
+  button.addEventListener('click', () => {
+    index = (index + 1) % speeds.length;
+    const video = document.querySelector('video');
+    if (video) video.playbackRate = speeds[index];
+    button.textContent = speeds[index] + '×';
+  });
+  document.body.appendChild(button);
+})();''',
+  ),
+  _BuiltinExtension(
+    id: 'browseit-wikipedia-reading-layout',
+    name: 'Leitura confortável',
+    description: 'Alarga a coluna do artigo e reduz elementos laterais na Wikipédia.',
+    siteLabel: 'Wikipedia',
+    icon: AppIcons.bookmarksSimple,
+    source: r'''// ==UserScript==
+// @name BrowseIt Wikipedia Reading Layout
+// @namespace browseit.local
+// @version 1.0.0
+// @description Ajusta a largura e a tipografia da área principal dos artigos da Wikipédia.
+// @match https://*.wikipedia.org/wiki/*
+// @run-at document-end
+// @grant none
+// ==/UserScript==
+(function () {
+  if (document.getElementById('browseit-wikipedia-reader')) return;
+  const style = document.createElement('style');
+  style.id = 'browseit-wikipedia-reader';
+  style.textContent = `
+    #content, #bodyContent, .mw-body { max-width: 980px!important; margin-left:auto!important; margin-right:auto!important; }
+    #mw-panel, #right-navigation, #left-navigation, .vector-sidebar-container { display:none!important; }
+    .mw-parser-output { font-size:1.08rem!important; line-height:1.75!important; }
+    .mw-parser-output p { margin:0 0 1.05em!important; }
+  `;
+  document.documentElement.appendChild(style);
+})();''',
+  ),
+];

@@ -5,6 +5,7 @@ import 'dart:math' as math;
 import 'package:material_ui/material_ui.dart';
 import 'package:material_3_expressive/material_3_expressive.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter/cupertino.dart' show CupertinoPageRoute;
 import 'package:flutter/services.dart';
 
 import 'models.dart';
@@ -13,6 +14,8 @@ import 'cloud_sync.dart';
 import 'browser_library.dart';
 import 'screens/home_screen.dart';
 import 'screens/orbit_browser_screen.dart';
+import 'screens/search_screen.dart';
+import 'screens/utilities_screen.dart';
 import 'widgets/drawer_menu.dart' as drawer_menu hide TabsGridScreen;
 import 'session_store.dart';
 import 'shell/shell_tab_request.dart';
@@ -1449,6 +1452,15 @@ class _LooplyShellState extends State<LooplyShell> with TickerProviderStateMixin
         newTabButtonKey: _newTabButtonKey,
         onOpenTabs: () => unawaited(_openTabsGrid()),
         onNewTab: () => unawaited(_openNewTabFromHome()),
+        onOpenAiSearch: () {
+          aiSearchModeEnabled.value = true;
+          Navigator.of(context).push<void>(
+            CupertinoPageRoute<void>(builder: (_) => const SearchScreen()),
+          );
+        },
+        onOpenUtilities: () => Navigator.of(context).push<void>(
+          CupertinoPageRoute<void>(builder: (_) => const UtilitiesScreen()),
+        ),
         onHome: () => unawaited(_navigateToShellScreen(0)),
       ),
     ];
