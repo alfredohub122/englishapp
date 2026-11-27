@@ -1,7 +1,0 @@
-Bilingual SQLite dictionaries are downloaded by the Gradle build from WikDict:
-https://download.wikdict.com/dictionaries/sqlite/2_2026-06/
-Files: en-pt.sqlite3 and pt-en.sqlite3
-Source and license information: https://www.wikdict.com/page/download
-WikDict dictionaries are distributed under Creative Commons Attribution-ShareAlike 4.0 International (CC BY-SA 4.0): https://creativecommons.org/licenses/by-sa/4.0/
-The dictionary content is derived from Wiktionary via DBnary. Retain attribution
-and comply with the ShareAlike terms when redistributing derived data.
