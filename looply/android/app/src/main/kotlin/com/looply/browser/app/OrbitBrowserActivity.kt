@@ -67,6 +67,8 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.webkit.WebSettingsCompat
 import androidx.webkit.WebViewFeature
+import androidx.webkit.WebViewCompat
+import androidx.webkit.ScriptHandler
 import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.slider.Slider
@@ -321,6 +323,8 @@ class OrbitBrowserActivity : AppCompatActivity() {
     private lateinit var titleView: TextView
     private lateinit var progress: ProgressBar
     private lateinit var webView: WebView
+    private val extensionScriptHandlers = mutableListOf<ScriptHandler>()
+    private var fallbackExtensionInjections: List<String> = emptyList()
     private lateinit var homeButtonIcon: TextView
     private lateinit var findBar: LinearLayout
     private lateinit var findField: EditText
@@ -964,6 +968,29 @@ class OrbitBrowserActivity : AppCompatActivity() {
         }
     }
 
+    private fun configureUserScripts() {
+        extensionScriptHandlers.forEach { handler -> runCatching { handler.remove() } }
+        extensionScriptHandlers.clear()
+        fallbackExtensionInjections = emptyList()
+        if (incognito || previewOnly) return
+
+        val scripts = NativeBrowserExtensions.enabledInjections(this)
+        if (scripts.isEmpty()) return
+
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
+            val fallback = mutableListOf<String>()
+            scripts.forEach { script ->
+                val registered = runCatching {
+                    WebViewCompat.addDocumentStartJavaScript(webView, script, setOf("*"))
+                }.getOrNull()
+                if (registered != null) extensionScriptHandlers += registered else fallback += script
+            }
+            fallbackExtensionInjections = fallback
+        } else {
+            fallbackExtensionInjections = scripts
+        }
+    }
+
     private fun configureWebView() {
         adBlockRules.start()
         val settings = webView.settings
@@ -1004,6 +1031,7 @@ class OrbitBrowserActivity : AppCompatActivity() {
         }
 
         originalUserAgent = settings.userAgentString
+        configureUserScripts()
 
         CookieManager.getInstance().setAcceptCookie(!incognito)
         CookieManager.getInstance().setAcceptThirdPartyCookies(
@@ -1126,6 +1154,12 @@ class OrbitBrowserActivity : AppCompatActivity() {
                 if (desktopMode) view.evaluateJavascript(DESKTOP_VIEWPORT_SCRIPT, null)
                 if (adBlockEnabled) {
                     view.evaluateJavascript(AD_COSMETIC_FILTER_SCRIPT, null)
+                }
+                // Compatibilidade para versões do WebView que ainda não expõem
+                // DOCUMENT_START_SCRIPT. Os scripts mantêm os próprios filtros
+                // @match/@include/@exclude antes de executar.
+                fallbackExtensionInjections.forEach { script ->
+                    view.evaluateJavascript(script, null)
                 }
                 view.post {
                     val restoredX = pendingRestoredScrollX

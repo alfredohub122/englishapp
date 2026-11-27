@@ -219,6 +219,7 @@ class _LooplyShellState extends State<LooplyShell> with TickerProviderStateMixin
   // transição enquanto a Activity Kotlin prepara a primeira composição.
   final Map<String, Completer<void>> _browserPlatformReady = {};
   final GlobalKey _repaintKey = GlobalKey();
+  final GlobalKey _newTabButtonKey = GlobalKey();
   final Map<String, GlobalKey> _previewKeys = {};
   final Map<String, GlobalKey> _cardKeys = {};
   final Map<String, GlobalKey> _homePreviewKeys = {};
@@ -878,6 +879,72 @@ class _LooplyShellState extends State<LooplyShell> with TickerProviderStateMixin
     await WidgetsBinding.instance.endOfFrame;
   }
 
+  Future<void> _openNewTabFromHome() async {
+    if (!mounted || _morphing || _showingTabsGrid) return;
+    _morphing = true;
+
+    final sourceRect = _rectInOverlay(_newTabButtonKey);
+    final bitmap = await captureWidgetSnapshot(_newTabButtonKey, pixelRatio: 2);
+    final imageProvider = bitmap == null ? null : await _prepareSnapshotImage(bitmap);
+    if (!mounted) {
+      _morphing = false;
+      return;
+    }
+
+    final tab = tabsController.createBrowserTab('https://www.google.com');
+    _ensureBrowserTabMounted(tab);
+    _browserFadeController.stop();
+    _browserFadeController.value = 1;
+    _skipNextNativeEnterAnimation = true;
+    tabsController.activate(tab.id);
+    unawaited(SessionStore.instance.saveLastActivity({
+      'type': 'browser',
+      'tabId': tab.id,
+    }));
+
+    if (imageProvider != null && sourceRect != null) {
+      _insertSnapshotOverlay(
+        image: imageProvider,
+        from: sourceRect,
+        opening: true,
+      );
+    }
+
+    setState(() {
+      _activeBrowserTabId = tab.id;
+      _showingTabsGrid = false;
+    });
+    await WidgetsBinding.instance.endOfFrame;
+    await WidgetsBinding.instance.endOfFrame;
+
+    if (!mounted) {
+      _removeSnapshotOverlay();
+      _morphing = false;
+      _skipNextNativeEnterAnimation = false;
+      return;
+    }
+
+    if (imageProvider != null && sourceRect != null) {
+      final viewport = _browserViewportKeys[tab.id];
+      final destination = viewport == null ? null : _rectInOverlay(viewport);
+      if (destination != null) {
+        await _animateSnapshot(to: destination);
+      } else {
+        _removeSnapshotOverlay();
+      }
+    } else {
+      _removeSnapshotOverlay();
+      _browserFadeController.value = 0;
+      unawaited(_playBrowserEntranceWhenReady(tab.id));
+    }
+
+    if (mounted) {
+      setState(() => _morphing = false);
+      await WidgetsBinding.instance.endOfFrame;
+      if (mounted) setState(() => _skipNextNativeEnterAnimation = false);
+    }
+  }
+
   Future<void> _openTabsGrid() async {
     if (_showingTabsGrid || _morphing) return;
     _morphing = true;
@@ -1379,7 +1446,10 @@ class _LooplyShellState extends State<LooplyShell> with TickerProviderStateMixin
       HomeScreen(
         onOpenDrawer: _openShellDrawer,
         recentTabPreviewKeys: _homePreviewKeys,
+        newTabButtonKey: _newTabButtonKey,
         onOpenTabs: () => unawaited(_openTabsGrid()),
+        onNewTab: () => unawaited(_openNewTabFromHome()),
+        onHome: () => unawaited(_navigateToShellScreen(0)),
       ),
     ];
     final Widget? activeBrowserPage = activeBrowserTab == null || _showingTabsGrid

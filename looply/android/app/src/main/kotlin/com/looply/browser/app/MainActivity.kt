@@ -171,6 +171,39 @@ class MainActivity : FlutterFragmentActivity() {
                 }
             }
         }
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "looply/native_extensions")
+            .setMethodCallHandler { call, result ->
+                try {
+                    when (call.method) {
+                        "list" -> result.success(NativeBrowserExtensions.list(this))
+                        "install" -> {
+                            val installed = NativeBrowserExtensions.install(
+                                context = this,
+                                id = call.argument<String>("id").orEmpty(),
+                                requestedName = call.argument<String>("name").orEmpty(),
+                                requestedDescription = call.argument<String>("description").orEmpty(),
+                                sourceUrl = call.argument<String>("sourceUrl").orEmpty(),
+                                sourceCode = call.argument<String>("sourceCode").orEmpty(),
+                            )
+                            result.success(installed)
+                        }
+                        "setEnabled" -> result.success(
+                            NativeBrowserExtensions.setEnabled(
+                                this,
+                                call.argument<String>("id").orEmpty(),
+                                call.argument<Boolean>("enabled") ?: false,
+                            )
+                        )
+                        "remove" -> result.success(
+                            NativeBrowserExtensions.remove(this, call.argument<String>("id").orEmpty())
+                        )
+                        else -> result.notImplemented()
+                    }
+                } catch (error: Exception) {
+                    result.error("browser_extension_error", error.message ?: "Não foi possível gerir o script.", null)
+                }
+            }
+
         nativeUiChannel?.setMethodCallHandler { call, result ->
                 when (call.method) {
                     "setAppThemeMode" -> {

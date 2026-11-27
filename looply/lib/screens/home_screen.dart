@@ -23,11 +23,17 @@ class HomeScreen extends StatelessWidget {
     super.key,
     this.onOpenDrawer,
     this.onOpenTabs,
+    this.onNewTab,
+    this.onHome,
+    this.newTabButtonKey,
     required this.recentTabPreviewKeys,
   });
 
   final VoidCallback? onOpenDrawer;
   final VoidCallback? onOpenTabs;
+  final VoidCallback? onNewTab;
+  final VoidCallback? onHome;
+  final GlobalKey? newTabButtonKey;
   final Map<String, GlobalKey> recentTabPreviewKeys;
 
   @override
@@ -37,6 +43,12 @@ class HomeScreen extends StatelessWidget {
 
     return Scaffold(
       backgroundColor: bg,
+      bottomNavigationBar: _HomeBottomBar(
+        onHome: onHome,
+        onOpenTabs: onOpenTabs,
+        onNewTab: onNewTab,
+        newTabButtonKey: newTabButtonKey,
+      ),
       body: Stack(
         children: [
           SafeArea(
@@ -56,7 +68,7 @@ class HomeScreen extends StatelessWidget {
             top: 0,
             left: 0,
             right: 0,
-            child: LooplyHomeAppBar(onOpenDrawer: onOpenDrawer, onOpenTabs: onOpenTabs),
+            child: LooplyHomeAppBar(onOpenDrawer: onOpenDrawer),
           ),
         ],
       ),
@@ -64,12 +76,11 @@ class HomeScreen extends StatelessWidget {
   }
 }
 
-// Barra superior com drawer, logótipo, contador de abas e avatar PNG.
+// Barra superior com drawer, logótipo e avatar PNG.
 class LooplyHomeAppBar extends StatelessWidget {
-  const LooplyHomeAppBar({super.key, this.onOpenDrawer, this.onOpenTabs});
+  const LooplyHomeAppBar({super.key, this.onOpenDrawer});
 
   final VoidCallback? onOpenDrawer;
-  final VoidCallback? onOpenTabs;
 
   @override
   Widget build(BuildContext context) {
@@ -136,10 +147,8 @@ class LooplyHomeAppBar extends StatelessWidget {
                 alignment: Alignment.centerRight,
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
-                  children: [
-                    _HomeTabsButton(onPressed: onOpenTabs),
-                    const SizedBox(width: 5),
-                    const _HomeAvatarButton(),
+                  children: const [
+                    _HomeAvatarButton(),
                   ],
                 ),
               ),
@@ -292,6 +301,100 @@ class _HomeAvatarButton extends StatelessWidget {
                 ),
               ),
             ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _HomeBottomBar extends StatelessWidget {
+  const _HomeBottomBar({
+    this.onHome,
+    this.onOpenTabs,
+    this.onNewTab,
+    this.newTabButtonKey,
+  });
+
+  final VoidCallback? onHome;
+  final VoidCallback? onOpenTabs;
+  final VoidCallback? onNewTab;
+  final GlobalKey? newTabButtonKey;
+
+  @override
+  Widget build(BuildContext context) {
+    final foreground = mainText(context);
+    final surface = settingsCardColor(context);
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(22, 7, 22, 8),
+        child: SizedBox(
+          height: 52,
+          child: Row(
+            children: [
+              Expanded(
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Tooltip(
+                    message: appText('home'),
+                    child: Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        customBorder: const CircleBorder(),
+                        onTap: onHome,
+                        child: SizedBox(
+                          width: 48,
+                          height: 48,
+                          child: Center(
+                            child: AppMaterialIcon(
+                              AppIcons.house,
+                              size: 25,
+                              fill: 1,
+                              color: foreground,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              Expanded(
+                child: Center(
+                  child: RepaintBoundary(
+                    key: newTabButtonKey,
+                    child: Material(
+                      color: surface,
+                      borderRadius: BorderRadius.circular(999),
+                      clipBehavior: Clip.antiAlias,
+                      child: InkWell(
+                        onTap: onNewTab,
+                        borderRadius: BorderRadius.circular(999),
+                        child: SizedBox(
+                          width: 66,
+                          height: 46,
+                          child: Center(
+                            child: AppMaterialIcon(
+                              AppIcons.plus,
+                              size: 25,
+                              weight: 500,
+                              color: foreground,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              Expanded(
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: _HomeTabsButton(onPressed: onOpenTabs),
+                ),
+              ),
+            ],
           ),
         ),
       ),

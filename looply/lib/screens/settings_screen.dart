@@ -21,6 +21,7 @@ import 'app_info_screen.dart';
 import 'auth_screen.dart';
 import 'profile_screen.dart';
 import 'security_screen.dart';
+import 'extensions_screen.dart';
 import '../widgets/material_symbols.dart';
 
 // Cards de Settings usam o tom do inputbar no tema escuro e um
@@ -115,6 +116,20 @@ class SettingsScreen extends StatelessWidget {
                   ),
                 ),
                 const _DefaultBrowserSettingsTile(),
+              ],
+            ),
+            const SizedBox(height: 20),
+            _SettingsSection(
+              title: 'Navegador',
+              children: [
+                _SettingsTile(
+                  icon: AppIcons.browser,
+                  label: 'Extensões',
+                  subtitle: 'Explorar, instalar e gerir scripts',
+                  onTap: () => Navigator.of(context).push(
+                    CupertinoPageRoute<void>(builder: (_) => const ExtensionsScreen()),
+                  ),
+                ),
               ],
             ),
             const SizedBox(height: 20),
