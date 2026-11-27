@@ -1,0 +1,111 @@
+plugins {
+    id "com.android.application"
+    id "dev.flutter.flutter-gradle-plugin"
+}
+
+def browseItWebClientId = (project.findProperty("BROWSEIT_GOOGLE_WEB_CLIENT_ID") ?: System.getenv("BROWSEIT_GOOGLE_WEB_CLIENT_ID") ?: "391370248709-t7rbdm2e6lpe1pujf2u9tb7g8n19cgs1.apps.googleusercontent.com").toString()
+def browseItStoreFile = (project.findProperty("BROWSEIT_KEYSTORE_PATH") ?: System.getenv("BROWSEIT_KEYSTORE_PATH") ?: "").toString()
+def browseItStorePassword = (project.findProperty("BROWSEIT_STORE_PASSWORD") ?: System.getenv("BROWSEIT_STORE_PASSWORD") ?: "").toString()
+def browseItKeyPassword = (project.findProperty("BROWSEIT_KEY_PASSWORD") ?: System.getenv("BROWSEIT_KEY_PASSWORD") ?: "").toString()
+def browseItKeyAlias = (project.findProperty("BROWSEIT_KEY_ALIAS") ?: System.getenv("BROWSEIT_KEY_ALIAS") ?: "browseit").toString()
+
+def browseItSigningConfigured =
+        !browseItStoreFile.isBlank() &&
+        !browseItStorePassword.isBlank() &&
+        !browseItKeyPassword.isBlank() &&
+        !browseItKeyAlias.isBlank() &&
+        project.file(browseItStoreFile).isFile()
+
+android {
+    namespace = "com.looply.browser.app"
+    compileSdk = 36
+    ndkVersion = "28.2.13676358"
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    defaultConfig {
+        applicationId = "com.looply.browser.app"
+        minSdk = flutter.minSdkVersion
+        targetSdk = flutter.targetSdkVersion
+        versionCode = flutter.versionCode
+        versionName = flutter.versionName
+        buildConfigField "String", "GOOGLE_WEB_CLIENT_ID", "\"${browseItWebClientId}\""
+    }
+
+    buildFeatures {
+        buildConfig true
+    }
+
+    signingConfigs {
+        browseitRelease {
+            if (browseItSigningConfigured) {
+                storeFile file(browseItStoreFile)
+                storeType = "JKS"
+                storePassword browseItStorePassword
+                keyAlias browseItKeyAlias
+                keyPassword browseItKeyPassword
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            signingConfig = browseItSigningConfigured ? signingConfigs.browseitRelease : signingConfigs.debug
+            minifyEnabled = true
+            shrinkResources = true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
+    }
+}
+
+tasks.register("verifyBrowseItReleaseSigning") {
+    doLast {
+        def missing = []
+        if (browseItStoreFile.isBlank()) missing << "BROWSEIT_KEYSTORE_PATH"
+        if (browseItStorePassword.isBlank()) missing << "BROWSEIT_STORE_PASSWORD"
+        if (browseItKeyPassword.isBlank()) missing << "BROWSEIT_KEY_PASSWORD"
+        if (browseItKeyAlias.isBlank()) missing << "BROWSEIT_KEY_ALIAS"
+        if (!browseItStoreFile.isBlank() && !project.file(browseItStoreFile).isFile()) {
+            missing << "keystore file not found at ${browseItStoreFile}"
+        }
+
+        if (!missing.isEmpty()) {
+            throw new GradleException(
+                "BrowseIt RELEASE signing is not configured. Missing/invalid: ${missing.join(', ')}. " +
+                "Configure the uploaded BrowseIt keystore and its GitHub Actions secrets before building a release."
+            )
+        }
+    }
+}
+
+tasks.configureEach { task ->
+    if (task.name.toLowerCase().contains("release") && task.name != "verifyBrowseItReleaseSigning") {
+        task.dependsOn(tasks.named("verifyBrowseItReleaseSigning"))
+    }
+}
+
+dependencies {
+    implementation "androidx.credentials:credentials:1.6.0"
+    implementation "androidx.credentials:credentials-play-services-auth:1.6.0"
+    implementation "com.google.android.libraries.identity.googleid:googleid:1.2.1"
+    implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2"
+    implementation "androidx.appcompat:appcompat:1.7.0"
+    implementation "androidx.biometric:biometric:1.1.0"
+    implementation "androidx.webkit:webkit:1.15.0"
+    implementation "androidx.swiperefreshlayout:swiperefreshlayout:1.1.0"
+    implementation "com.google.android.material:material:1.14.0"
+    implementation "com.caverock:androidsvg-aar:1.4"
+}
+
+flutter {
+    source = "../.."
+}

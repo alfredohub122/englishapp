@@ -1,0 +1,240 @@
+package com.looply.browser.app
+
+import android.content.Context
+import android.graphics.Bitmap
+import android.os.Build
+import android.graphics.Canvas
+import android.graphics.Paint
+import android.graphics.RectF
+import android.graphics.Typeface
+import android.graphics.drawable.BitmapDrawable
+import android.graphics.drawable.Drawable
+import android.widget.TextView
+import android.view.Gravity
+import java.util.Locale
+import com.caverock.androidsvg.SVG
+import com.looply.browser.app.icons.svg.regular.TABS_COUNTER_SVG
+import io.flutter.FlutterInjector
+
+/**
+ * Utiliza a própria fonte oficial Material Symbols Rounded já empacotada pelo
+ * Flutter através de material_symbols_icons. Assim o browser Kotlin e a UI
+ * Flutter desenham os mesmos glifos, sem SVGs ou ícones Android clássicos
+ * — exceto os ícones próprios menu-options.svg e tabs-counter.svg,
+ * partilhados com a interface Flutter.
+ */
+internal object MaterialSymbolsRounded {
+    private const val FONT_ASSET =
+        "packages/material_symbols_icons/lib/fonts/MaterialSymbolsRounded.ttf"
+
+    private val codePoints = mapOf(
+        "home" to 0xE9B2,
+        "more_vert" to 0xE5D4,
+        "arrow_upward" to 0xE5D8,
+        "arrow_downward" to 0xE5DB,
+        "close" to 0xE5CD,
+        "arrow_back" to 0xE5C4,
+        "arrow_forward" to 0xE5C8,
+        "add" to 0xE145,
+        // Used by the first row of the Orbit popup menu.
+        "add_box" to 0xE146,
+        "tab" to 0xE8D8,
+        "bookmark" to 0xE8E7,
+        "bookmarks" to 0xE98B,
+        "history" to 0xE8B3,
+        "download" to 0xF090,
+        "refresh" to 0xE5D5,
+        "search" to 0xEF7A,
+        "desktop_windows" to 0xE30C,
+        "translate" to 0xE8E2,
+        "text_decrease" to 0xEADD,
+        "text_increase" to 0xEAE2,
+        "text_fields" to 0xE262,
+        "zoom_in" to 0xE8FF,
+        "print" to 0xE8AD,
+        "content_copy" to 0xE14D,
+        "share" to 0xE80D,
+        "info" to 0xE88E,
+        "settings" to 0xE8B8,
+        "open_in_new" to 0xE89E,
+        "link" to 0xE157,
+        "archive" to 0xE149,
+        "code" to 0xE86F,
+        "code_blocks" to 0xF84D,
+        "visibility" to 0xE8F4,
+        "play_circle" to 0xE1C4,
+        "image" to 0xE3F4,
+        "audio_file" to 0xEB82,
+        "description" to 0xE873,
+        "chevron_left" to 0xE5CB,
+        "chevron_right" to 0xE5CC,
+        "play_arrow" to 0xE037,
+        "pause" to 0xE034,
+        "star" to 0xF09A,
+        "domino_mask" to 0xF5E4,
+    )
+
+    private val fontCache = mutableMapOf<Int, Typeface>()
+
+    private fun font(context: Context): Typeface {
+        val key = System.identityHashCode(context.applicationContext)
+        return synchronized(fontCache) {
+            fontCache[key] ?: run {
+                val loader = FlutterInjector.instance().flutterLoader()
+                val assetKey = loader.getLookupKeyForAsset(FONT_ASSET)
+                Typeface.createFromAsset(context.assets, assetKey).also {
+                    fontCache[key] = it
+                }
+            }
+        }
+    }
+
+    /**
+     * Material Symbols Rounded é uma fonte variável. Mantemos o peso padrão
+     * solicitado pelo sistema visual (400) e grade neutro.
+     */
+    private fun fontVariationSettings(opticalSizeSp: Float): String {
+        val opticalSize = opticalSizeSp.coerceIn(24f, 48f)
+        return "'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' $opticalSize"
+    }
+
+    /**
+     * Um nome de ícone desconhecido não deve derrubar o browser enquanto o
+     * popup está a ser construído. Todos os nomes conhecidos usam o glifo
+     * mapeado; nomes futuros sem mapeamento recebem um fallback visual neutro.
+     */
+    fun glyph(name: String): String {
+        val codePoint = codePoints[name] ?: codePoints.getValue("more_vert")
+        return String(Character.toChars(codePoint))
+    }
+
+    fun textView(
+        context: Context,
+        name: String,
+        color: Int,
+        sizeSp: Float,
+        description: String? = null,
+    ): TextView {
+        return TextView(context).apply {
+            text = glyph(name)
+            typeface = font(context)
+            textSize = sizeSp
+            setTextColor(color)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                this.fontVariationSettings = this@MaterialSymbolsRounded
+                    .fontVariationSettings(sizeSp)
+            }
+            gravity = Gravity.CENTER
+            includeFontPadding = false
+            contentDescription = description
+            isSingleLine = true
+            importantForAccessibility = if (description == null) {
+                android.view.View.IMPORTANT_FOR_ACCESSIBILITY_NO
+            } else {
+                android.view.View.IMPORTANT_FOR_ACCESSIBILITY_YES
+            }
+        }
+    }
+
+    fun bitmapDrawable(
+        context: Context,
+        name: String,
+        color: Int,
+        sizePx: Int,
+    ): Drawable {
+        val dimension = sizePx.coerceAtLeast(1)
+        val bitmap = Bitmap.createBitmap(dimension, dimension, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.SUBPIXEL_TEXT_FLAG).apply {
+            typeface = font(context)
+            textAlign = Paint.Align.CENTER
+            textSize = dimension * .88f
+            this.color = color
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                setFontVariationSettings(
+                    fontVariationSettings(
+                        dimension / context.resources.displayMetrics.density
+                    )
+                )
+            }
+        }
+        val baseline = dimension / 2f - (paint.ascent() + paint.descent()) / 2f
+        canvas.drawText(glyph(name), dimension / 2f, baseline, paint)
+        return BitmapDrawable(context.resources, bitmap)
+    }
+
+    private fun menuOptionsSvg(context: Context, color: Int): SVG {
+        val loader = FlutterInjector.instance().flutterLoader()
+        val assetKey = loader.getLookupKeyForAsset("assets/icons/svg/regular/menu-options.svg")
+        val markup = context.assets.open(assetKey).bufferedReader(Charsets.UTF_8).use { it.readText() }
+        val hex = String.format(Locale.US, "#%06X", color and 0x00FFFFFF)
+        val rgb = "rgb(${android.graphics.Color.red(color)}," +
+            "${android.graphics.Color.green(color)}," +
+            "${android.graphics.Color.blue(color)})"
+        return SVG.getFromString(
+            markup.replace("#000000", hex).replace("rgb(0,0,0)", rgb)
+        )
+    }
+
+    fun menuOptionsDrawable(context: Context, color: Int, sizePx: Int): Drawable {
+        val dimension = sizePx.coerceAtLeast(1)
+        val bitmap = Bitmap.createBitmap(dimension, dimension, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+        val svg = menuOptionsSvg(context, color)
+        svg.documentWidth = dimension.toFloat()
+        svg.documentHeight = dimension.toFloat()
+        svg.renderToCanvas(canvas, RectF(0f, 0f, dimension.toFloat(), dimension.toFloat()))
+        return BitmapDrawable(context.resources, bitmap)
+    }
+
+    private fun tabsCounterSvg(color: Int): SVG {
+        val hex = String.format(
+            Locale.US,
+            "#%06X",
+            color and 0x00FFFFFF
+        )
+        val rgb = "rgb(${android.graphics.Color.red(color)}," +
+            "${android.graphics.Color.green(color)}," +
+            "${android.graphics.Color.blue(color)})"
+
+        // O SVG de origem contém preto fixo em fill/stroke. Substitui pela
+        // cor efetiva da barra antes de rasterizar, incluindo o modo escuro.
+        val tintedMarkup = TABS_COUNTER_SVG
+            .replace("#000000", hex)
+            .replace("rgb(0,0,0)", rgb)
+
+        return SVG.getFromString(tintedMarkup)
+    }
+
+    /**
+     * Desenha o quadrado tabs-counter.svg com o número de abas centralizado
+     * dentro dele, equivalente ao widget _TabsCountIcon do lado Flutter.
+     */
+    fun tabsCounterDrawable(
+        context: Context,
+        count: Int,
+        color: Int,
+        sizePx: Int,
+    ): Drawable {
+        val dimension = sizePx.coerceAtLeast(1)
+        val bitmap = Bitmap.createBitmap(dimension, dimension, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+
+        val svg = tabsCounterSvg(color)
+        svg.documentWidth = dimension.toFloat()
+        svg.documentHeight = dimension.toFloat()
+        svg.renderToCanvas(canvas, RectF(0f, 0f, dimension.toFloat(), dimension.toFloat()))
+
+        val text = if (count > 99) "99+" else count.toString()
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            this.color = color
+            textAlign = Paint.Align.CENTER
+            textSize = dimension * .42f
+            typeface = Typeface.DEFAULT_BOLD
+        }
+        val baseline = dimension / 2f - (paint.ascent() + paint.descent()) / 2f
+        canvas.drawText(text, dimension / 2f, baseline, paint)
+
+        return BitmapDrawable(context.resources, bitmap)
+    }
+}

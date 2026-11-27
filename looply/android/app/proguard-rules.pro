@@ -1,0 +1,3 @@
+-keepattributes JavascriptInterface
+-keepattributes *Annotation*
+-keep class com.looply.browser.app.** { *; }

@@ -1,0 +1,1700 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:typed_data';
+import 'dart:io';
+
+import 'package:flutter/foundation.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:http/http.dart' as http;
+
+import 'session_store.dart';
+import 'widgets/material_symbols.dart';
+
+const Set<String> adBlockDomains = {
+  'doubleclick.net', 'googlesyndication.com', 'googleadservices.com',
+  'google-analytics.com', 'googletagmanager.com', 'googletagservices.com',
+  'adservice.google.com', 'adsystem.com', 'amazon-adsystem.com', 'facebook.net',
+  'connect.facebook.net', 'fbcdn.net', 'ads.facebook.com', 'taboola.com',
+  'outbrain.com', 'criteo.com', 'criteo.net', 'adroll.com', 'adnxs.com',
+  'rubiconproject.com', 'pubmatic.com', 'openx.net', 'casalemedia.com',
+  'smartadserver.com', 'advertising.com', 'adform.net', 'adtech.com', 'media.net',
+  'yieldmo.com', 'bidswitch.net', 'contextweb.com', 'exoclick.com', 'popads.net',
+  'propellerads.com', 'revcontent.com', 'mgid.com', 'zedo.com', 'adblade.com',
+  'adcolony.com', 'applovin.com', 'chartboost.com', 'unityads.unity3d.com',
+  'vungle.com', 'inmobi.com', 'mopub.com', 'scorecardresearch.com',
+  'quantserve.com', 'hotjar.com', 'mixpanel.com', 'segment.io', 'segment.com',
+  'amplitude.com', 'crazyegg.com', 'optimizely.com', 'newrelic.com', 'nr-data.net',
+  'bugsnag.com', 'sentry.io', 'intercom.io', 'drift.com', 'onesignal.com',
+  'pushwoosh.com', 'branch.io', 'adjust.com', 'appsflyer.com', 'kochava.com',
+  'tapjoy.com', 'ironsrc.com', 'smaato.net', 'sharethrough.com', 'teads.tv',
+  'triplelift.com', 'spotxchange.com', 'adsrvr.org', 'turn.com', 'mathtag.com',
+  'bluekai.com', 'krxd.net', 'demdex.net', 'everesttech.net', 'serving-sys.com',
+  'atdmt.com', 'adbrite.com', 'adtechus.com', 'burstnet.com', 'chitika.com',
+  'clicksor.com', 'infolinks.com', 'kontera.com', 'lijit.com', 'media6degrees.com',
+  'pointroll.com', 'quantcast.com', 'rlcdn.com', 'simpli.fi', 'tribalfusion.com',
+  'tremorhub.com', 'undertone.com', 'yieldlab.net', 'zergnet.com', 'popcash.net',
+  'adsterra.com', 'propellerclick.com', 'clickadu.com', 'galaksion.com',
+  'adspyglass.com', 'hilltopads.net', 'juicyads.com', 'trafficjunky.com',
+  'exosrv.com', 'moatads.com', 'adsafeprotected.com', 'doubleverify.com',
+  'ensighten.com', 'tynt.com', 'addthis.com', 'sharethis.com', 'disqus.com',
+  'gemius.pl', 'histats.com', 'statcounter.com', 'clicky.com', 'getclicky.com',
+  'woopra.com', 'kissmetrics.com', 'heap.io', 'fullstory.com', 'luckyorange.com',
+  'trafficstars.com', 'plugrush.com', 'tsyndicate.com', 'adcash.com',
+  'adnium.com', 'ero-advertising.com', 'adxpansion.com', 'onclickads.net',
+  'onclickalgo.com', 'onclckmn.com', 'adk2x.com', 'adtrafico.com', 'bebi.com',
+  'a-ads.com', 'trafficfactory.biz',
+  'mouseflow.com', 'smartlook.com', 'clarity.ms',
+};
+
+// Preferências persistentes do motor do navegador e da aparência dos sites.
+final ValueNotifier<bool> adBlockEnabled = ValueNotifier<bool>(true);
+final ValueNotifier<bool> navigationAcceleratorEnabled = ValueNotifier<bool>(true);
+final ValueNotifier<bool> forceDarkWebsitesEnabled = ValueNotifier<bool>(false);
+final ValueNotifier<bool> siteThemeFollowsAppEnabled = ValueNotifier<bool>(true);
+final ValueNotifier<bool> adaptiveToolbarColorEnabled = ValueNotifier<bool>(false);
+final ValueNotifier<bool> aiSearchModeEnabled = ValueNotifier<bool>(false);
+// AssistiveTouch fica ativo por padrão e pode ser desligado nas Definições.
+final ValueNotifier<bool> assistiveTouchEnabled = ValueNotifier<bool>(true);
+
+bool _runtimePreferenceListenersAttached = false;
+
+Future<void> restoreRuntimeSettings() async {
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    adBlockEnabled.value = prefs.getBool('looply_ad_block_enabled') ?? true;
+    navigationAcceleratorEnabled.value = prefs.getBool('looply_navigation_accelerator_enabled') ?? true;
+    forceDarkWebsitesEnabled.value = prefs.getBool('looply_force_dark_websites') ?? false;
+    siteThemeFollowsAppEnabled.value = prefs.getBool('looply_site_theme_follows_app') ?? true;
+    adaptiveToolbarColorEnabled.value = prefs.getBool('looply_adaptive_toolbar_color') ?? false;
+    aiSearchModeEnabled.value = prefs.getBool('looply_ai_search_mode') ?? false;
+    assistiveTouchEnabled.value = prefs.getBool('browseit_assistive_touch_enabled') ?? true;
+    if (_runtimePreferenceListenersAttached) return;
+    _runtimePreferenceListenersAttached = true;
+    void persist(String key, ValueNotifier<bool> notifier) {
+      notifier.addListener(() => unawaited(prefs.setBool(key, notifier.value)));
+    }
+    persist('looply_ad_block_enabled', adBlockEnabled);
+    persist('looply_navigation_accelerator_enabled', navigationAcceleratorEnabled);
+    persist('looply_force_dark_websites', forceDarkWebsitesEnabled);
+    persist('looply_site_theme_follows_app', siteThemeFollowsAppEnabled);
+    persist('looply_adaptive_toolbar_color', adaptiveToolbarColorEnabled);
+    persist('looply_ai_search_mode', aiSearchModeEnabled);
+    persist('browseit_assistive_touch_enabled', assistiveTouchEnabled);
+  } catch (_) {}
+}
+
+
+class AdBlockStats extends ChangeNotifier {
+  AdBlockStats._();
+  static final AdBlockStats instance = AdBlockStats._();
+
+  static const String _storageKey = 'looply_adblock_daily_history_v2';
+  static const String _usageStorageKey = 'looply_app_usage_days_v1';
+  static const MethodChannel _nativeStatsChannel = MethodChannel('looply/native_adblock');
+  final Map<String, int> _dailyCounts = <String, int>{};
+  final Set<String> _usageDays = <String>{};
+  Timer? _notifyTimer;
+  Timer? _persistTimer;
+  bool _restored = false;
+
+  bool get isRestored => _restored;
+  int get totalBlocked => _dailyCounts.values.fold<int>(0, (sum, value) => sum + value);
+  Map<String, int> get dailyHistory => Map.unmodifiable(_dailyCounts);
+
+  List<int> get dailyBuckets => List<int>.generate(7, (index) {
+    final date = DateTime.now().subtract(Duration(days: 6 - index));
+    return countForDate(date);
+  }, growable: false);
+
+  static String dateKey(DateTime date) =>
+      '${date.year.toString().padLeft(4, '0')}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+
+  int countForDate(DateTime date) => _dailyCounts[dateKey(date)] ?? 0;
+  bool wasUsedOn(DateTime date) =>
+      _usageDays.contains(dateKey(date)) || countForDate(date) > 0;
+
+  /// Rótulos e totais de anúncios bloqueados para os 7 dias mais recentes
+  /// (usado na vista "Day" do gráfico de barras da tela de Atividade).
+  List<MapEntry<String, int>> get dayView {
+    const labels = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+    return List<MapEntry<String, int>>.generate(7, (index) {
+      final date = DateTime.now().subtract(Duration(days: 6 - index));
+      return MapEntry(labels[date.weekday % 7], countForDate(date));
+    }, growable: false);
+  }
+
+  /// Totais por semana (segunda a domingo) das últimas 7 semanas, incluindo
+  /// a semana atual (usado na vista "Week").
+  List<MapEntry<String, int>> get weekView {
+    final now = DateTime.now();
+    final currentMonday = now.subtract(Duration(days: now.weekday - 1));
+    return List<MapEntry<String, int>>.generate(7, (index) {
+      final mondayOfWeek = currentMonday.subtract(Duration(days: 7 * (6 - index)));
+      var total = 0;
+      for (var dayOffset = 0; dayOffset < 7; dayOffset++) {
+        total += countForDate(mondayOfWeek.add(Duration(days: dayOffset)));
+      }
+      return MapEntry('S${index + 1}', total);
+    }, growable: false);
+  }
+
+  /// Totais por mês dos últimos 7 meses, incluindo o mês atual
+  /// (usado na vista "Month").
+  List<MapEntry<String, int>> get monthView {
+    const labels = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+    final now = DateTime.now();
+    return List<MapEntry<String, int>>.generate(7, (index) {
+      final monthsAgo = 6 - index;
+      final targetMonthIndex = now.month - 1 - monthsAgo;
+      final year = now.year + (targetMonthIndex < 0 ? ((targetMonthIndex + 1) ~/ 12) - 1 : targetMonthIndex ~/ 12);
+      final month = ((targetMonthIndex % 12) + 12) % 12 + 1;
+      var total = 0;
+      for (final key in _dailyCounts.keys) {
+        final parts = key.split('-');
+        if (parts.length != 3) continue;
+        final keyYear = int.tryParse(parts[0]);
+        final keyMonth = int.tryParse(parts[1]);
+        if (keyYear == year && keyMonth == month) total += _dailyCounts[key] ?? 0;
+      }
+      return MapEntry(labels[month - 1], total);
+    }, growable: false);
+  }
+
+  /// Totais por ano dos últimos 5 anos (usado na vista "Year").
+  List<MapEntry<String, int>> get yearView {
+    final now = DateTime.now();
+    return List<MapEntry<String, int>>.generate(5, (index) {
+      final year = now.year - (4 - index);
+      var total = 0;
+      for (final key in _dailyCounts.keys) {
+        final parts = key.split('-');
+        if (parts.length != 3) continue;
+        if (int.tryParse(parts[0]) == year) total += _dailyCounts[key] ?? 0;
+      }
+      return MapEntry(year.toString(), total);
+    }, growable: false);
+  }
+
+  /// Uso (verdadeiro/falso) de cada dia da semana atual (segunda a domingo),
+  /// usado para marcar os "checks" do Day Streak. Dias futuros são sempre
+  /// falsos, mesmo que a semana ainda não tenha terminado.
+  List<bool> get currentWeekUsage {
+    final now = DateTime.now();
+    final monday = now.subtract(Duration(days: now.weekday - 1));
+    return List<bool>.generate(7, (index) {
+      final day = monday.add(Duration(days: index));
+      final todayAtMidnight = DateTime(now.year, now.month, now.day);
+      final dayAtMidnight = DateTime(day.year, day.month, day.day);
+      if (dayAtMidnight.isAfter(todayAtMidnight)) return false;
+      return wasUsedOn(day);
+    }, growable: false);
+  }
+
+  /// Sequência atual de dias consecutivos de uso, terminando hoje ou ontem
+  /// (se hoje ainda não tiver uso registado, a sequência de ontem continua
+  /// a contar como "em curso" até à meia-noite).
+  int get currentStreak {
+    final now = DateTime.now();
+    var cursor = DateTime(now.year, now.month, now.day);
+    if (!wasUsedOn(cursor)) {
+      cursor = cursor.subtract(const Duration(days: 1));
+    }
+    var streak = 0;
+    while (wasUsedOn(cursor)) {
+      streak++;
+      cursor = cursor.subtract(const Duration(days: 1));
+    }
+    return streak;
+  }
+
+  bool _nativeListenerAttached = false;
+
+  void _attachNativeStatsListener() {
+    if (_nativeListenerAttached || defaultTargetPlatform != TargetPlatform.android) return;
+    _nativeListenerAttached = true;
+    _nativeStatsChannel.setMethodCallHandler((call) async {
+      if (call.method == 'statsChanged') await restore();
+    });
+  }
+
+  Future<void> restore() async {
+    _attachNativeStatsListener();
+    _dailyCounts.clear();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_storageKey);
+      if (raw != null && raw.isNotEmpty) {
+        final decoded = jsonDecode(raw);
+        if (decoded is Map) {
+          _dailyCounts
+            ..clear()
+            ..addEntries(decoded.entries.where((entry) =>
+              entry.key is String && entry.value is num && (entry.value as num) >= 0
+            ).map((entry) => MapEntry(entry.key as String, (entry.value as num).toInt())));
+        }
+      }
+      _usageDays.clear();
+      final rawUsage = prefs.getString(_usageStorageKey);
+      if (rawUsage != null && rawUsage.isNotEmpty) {
+        final decodedUsage = jsonDecode(rawUsage);
+        if (decodedUsage is List) {
+          _usageDays.addAll(decodedUsage.whereType<String>().where(
+            (key) => RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(key),
+          ));
+        }
+      }
+    } catch (_) {
+      // Dados antigos/corrompidos não impedem o arranque do navegador.
+    } finally {
+      // Datas antigas com histórico de navegação são reconhecidas como dias
+      // de utilização. O dia atual também é registado ao abrir a aplicação.
+      for (final entry in activityController.entries) {
+        _usageDays.add(dateKey(entry.timestamp));
+      }
+      _usageDays.add(dateKey(DateTime.now()));
+      if (_usageDays.length > 730) {
+        final ordered = _usageDays.toList()..sort();
+        _usageDays.removeAll(ordered.take(_usageDays.length - 730));
+      }
+      _restored = true;
+      unawaited(_persistUsageDays());
+      notifyListeners();
+    }
+  }
+
+  Future<void> _persistUsageDays() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final ordered = _usageDays.toList()..sort();
+      await prefs.setString(_usageStorageKey, jsonEncode(ordered));
+    } catch (_) {}
+  }
+
+  void registerBlock({DateTime? at}) {
+    final key = dateKey(at ?? DateTime.now());
+    _dailyCounts[key] = (_dailyCounts[key] ?? 0) + 1;
+
+    // Mantém no máximo dois anos de histórico, evitando crescimento ilimitado
+    // do SharedPreferences em sessões de navegação longas.
+    if (_dailyCounts.length > 730) {
+      final keys = _dailyCounts.keys.toList()..sort();
+      for (final oldKey in keys.take(_dailyCounts.length - 730)) {
+        _dailyCounts.remove(oldKey);
+      }
+    }
+
+    _notifyTimer?.cancel();
+    _notifyTimer = Timer(const Duration(milliseconds: 180), notifyListeners);
+    _persistTimer?.cancel();
+    _persistTimer = Timer(const Duration(milliseconds: 650), () {
+      unawaited(_persist());
+    });
+  }
+
+  void clear() {
+    _dailyCounts.clear();
+    _notifyTimer?.cancel();
+    _persistTimer?.cancel();
+    notifyListeners();
+    unawaited(_persist());
+  }
+
+  Future<void> flushPersistence() => _persist();
+
+  Future<void> _persist() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_storageKey, jsonEncode(_dailyCounts));
+    } catch (_) {}
+  }
+
+  @override
+  void dispose() {
+    _notifyTimer?.cancel();
+    _persistTimer?.cancel();
+    super.dispose();
+  }
+}
+
+bool isAdBlockedUrl(String url) {
+  if (!adBlockEnabled.value) return false;
+  final uri = Uri.tryParse(url);
+  final host = uri?.host.toLowerCase().replaceFirst(RegExp(r'\.$'), '');
+  if (host == null || host.isEmpty) return false;
+  if (adBlockDomains.any((domain) => host == domain || host.endsWith('.$domain'))) {
+    return true;
+  }
+
+  // Heurísticas conservadoras usadas também para rejeitar popups publicitários
+  // de subdomínios/hosts novos que ainda não constam na lista de domínios.
+  const adHostLabels = <String>{
+    'ad', 'ads', 'adserver', 'adservice', 'advert', 'advertising', 'banner',
+    'popunder', 'popads', 'clickunder', 'tracker', 'tracking', 'pixel',
+    'beacon', 'affiliate', 'sponsored', 'impression', 'prebid', 'adunit',
+  };
+  final labels = host.split('.').expand((part) => part.split('-'));
+  if (labels.any(adHostLabels.contains)) return true;
+
+  final path = uri?.path.toLowerCase() ?? '';
+  if (RegExp(r'(?:^|/)(?:ads?|adserver|adservice|advert(?:ising)?|banners?|popunder|clickunder|trackers?|tracking|pixels?|beacons?|impressions?|vast)(?:[/._-]|$)')
+      .hasMatch(path)) {
+    return true;
+  }
+  return false;
+}
+
+class SearchEngine {
+  const SearchEngine({required this.name, required this.domain, required this.urlTemplate, this.assetPath});
+  final String name;
+  final String domain;
+  final String urlTemplate;
+  final String? assetPath;
+  String buildUrl(String query) => urlTemplate.replaceAll('{q}', Uri.encodeQueryComponent(query));
+  String get faviconUrl => 'https://www.google.com/s2/favicons?domain=$domain&sz=128';
+}
+
+const List<SearchEngine> searchEngines = [
+  SearchEngine(name: 'Google', domain: 'google.com', urlTemplate: 'https://www.google.com/search?q={q}'),
+  SearchEngine(name: 'Bing', domain: 'bing.com', urlTemplate: 'https://www.bing.com/search?q={q}'),
+  SearchEngine(name: 'DuckDuckGo', domain: 'duckduckgo.com', urlTemplate: 'https://duckduckgo.com/?q={q}'),
+  SearchEngine(name: 'Yahoo', domain: 'yahoo.com', urlTemplate: 'https://search.yahoo.com/search?p={q}'),
+  SearchEngine(name: 'Brave', domain: 'search.brave.com', urlTemplate: 'https://search.brave.com/search?q={q}'),
+  SearchEngine(name: 'Ecosia', domain: 'ecosia.org', urlTemplate: 'https://www.ecosia.org/search?q={q}'),
+];
+
+class SearchEngineController extends ValueNotifier<SearchEngine> {
+  SearchEngineController() : super(searchEngines.first);
+
+  Future<void> restore() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final name = prefs.getString('looply_search_engine') ?? searchEngines.first.name;
+      value = searchEngines.first;
+      SearchEngine? engine;
+      for (final item in searchEngines) {
+        if (item.name == name) { engine = item; break; }
+      }
+      if (engine != null) value = engine;
+    } catch (_) {}
+  }
+
+  void select(SearchEngine engine) {
+    value = engine;
+    unawaited(_persist());
+  }
+
+  Future<void> _persist() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('looply_search_engine', value.name);
+    } catch (_) {}
+  }
+}
+
+
+
+final SearchEngineController activeSearchEngine = SearchEngineController();
+
+/// Pesquisas recentes persistentes, independentes do histórico de navegação.
+class SearchHistoryController extends ChangeNotifier {
+  static const String _storageKey = 'looply_search_history_v1';
+  final List<String> _queries = <String>[];
+  List<String> get queries => List.unmodifiable(_queries);
+
+  Future<void> restore() async {
+    _queries.clear();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_storageKey);
+      if (raw != null && raw.isNotEmpty) {
+        final decoded = jsonDecode(raw);
+        if (decoded is List) {
+          _queries.addAll(decoded.whereType<String>().map((value) => value.trim())
+              .where((value) => value.isNotEmpty).take(30));
+        }
+      }
+    } catch (_) {}
+    notifyListeners();
+  }
+
+  void add(String query) {
+    final value = query.trim();
+    if (value.isEmpty) return;
+    _queries.removeWhere((item) => item.toLowerCase() == value.toLowerCase());
+    _queries.insert(0, value);
+    if (_queries.length > 30) _queries.removeRange(30, _queries.length);
+    notifyListeners();
+    unawaited(_persist());
+  }
+
+  void remove(String query) {
+    _queries.remove(query);
+    notifyListeners();
+    unawaited(_persist());
+  }
+
+  Future<void> flushPersistence() => _persist();
+
+  Future<void> _persist() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_storageKey, jsonEncode(_queries));
+    } catch (_) {}
+  }
+}
+
+final SearchHistoryController searchHistoryController = SearchHistoryController();
+
+enum SiteCategory {
+  destaque,
+  produtividade,
+  social,
+  entretenimento,
+  desenvolvimento,
+  ia,
+  apostas,
+  compras,
+  noticias,
+  viagens,
+  financas,
+  personalizados,
+}
+
+const Map<SiteCategory, String> siteCategoryLabels = {
+  SiteCategory.destaque: 'Destaques',
+  SiteCategory.produtividade: 'Produtividade',
+  SiteCategory.social: 'Redes sociais',
+  SiteCategory.entretenimento: 'Entretenimento',
+  SiteCategory.desenvolvimento: 'Desenvolvimento',
+  SiteCategory.ia: 'Inteligência artificial',
+  SiteCategory.apostas: 'Apostas desportivas',
+  SiteCategory.compras: 'Compras',
+  SiteCategory.noticias: 'Notícias e informação',
+  SiteCategory.viagens: 'Viagens',
+  SiteCategory.financas: 'Finanças e serviços',
+  SiteCategory.personalizados: 'Os meus sites',
+};
+
+String siteCategoryLabel(SiteCategory category) =>
+    siteCategoryLabels[category] ?? category.name;
+
+class QuickSite {
+  const QuickSite({
+    required this.name,
+    required this.url,
+    this.assetPath,
+    this.iconBase64,
+    this.faviconUrl,
+    this.category = SiteCategory.destaque,
+  });
+  final String name;
+  final String? assetPath;
+  final String url;
+  final String? iconBase64;
+  final String? faviconUrl;
+  final SiteCategory category;
+}
+
+
+class CustomSitesController extends ChangeNotifier {
+  static const String _storageKey = 'looply_custom_sites_v1';
+  final List<QuickSite> _sites = [];
+  List<QuickSite> get sites => List.unmodifiable(_sites);
+
+  Future<void> restore() async {
+    _sites.clear();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_storageKey);
+      if (raw != null && raw.isNotEmpty) {
+        final decoded = jsonDecode(raw);
+        if (decoded is List) _sites.addAll(decoded.whereType<Map>().map((item) {
+          final name = item['name'];
+          final url = item['url'];
+          if (name is! String || url is! String) return null;
+          return QuickSite(
+            name: name,
+            url: url,
+            iconBase64: item['iconBase64'] is String ? item['iconBase64'] as String : null,
+            faviconUrl: item['faviconUrl'] is String ? item['faviconUrl'] as String : null,
+            category: SiteCategory.personalizados,
+          );
+        }).whereType<QuickSite>());
+      }
+    } catch (_) {
+      // Dados de sites inválidos não impedem a abertura do Looply.
+    }
+    notifyListeners();
+  }
+
+  Future<void> add(QuickSite site) async {
+    _sites.removeWhere((item) => item.url == site.url);
+    _sites.insert(0, site);
+    notifyListeners();
+    await _persist();
+  }
+
+  Future<void> remove(String url) async {
+    _sites.removeWhere((item) => item.url == url);
+    notifyListeners();
+    await _persist();
+  }
+
+  Future<void> flushPersistence() => _persist();
+
+  Future<void> _persist() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final payload = _sites.map((site) => <String, Object?>{
+        'name': site.name,
+        'url': site.url,
+        'iconBase64': site.iconBase64,
+        'faviconUrl': site.faviconUrl,
+      }).toList();
+      await prefs.setString(_storageKey, jsonEncode(payload));
+    } catch (_) {}
+  }
+}
+
+final CustomSitesController customSitesController = CustomSitesController();
+
+enum ActivityKind { site, game }
+
+class ActivityEntry {
+  ActivityEntry({required this.kind, required this.title, required this.url, DateTime? timestamp})
+      : timestamp = timestamp ?? DateTime.now();
+  final ActivityKind kind;
+  final String title;
+  final String url;
+  final DateTime timestamp;
+}
+
+String _activityEntryKey(ActivityEntry entry) =>
+    '${entry.kind.name}|${entry.url}|${entry.timestamp.microsecondsSinceEpoch}';
+
+class ActivityController extends ChangeNotifier {
+  static const String _storageKey = 'looply_browsing_history_v1';
+  final List<ActivityEntry> _entries = [];
+  List<ActivityEntry> get entries => List.unmodifiable(_entries.reversed);
+
+  Future<void> restore() async {
+    _entries.clear();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_storageKey);
+      if (raw != null && raw.isNotEmpty) {
+        final decoded = jsonDecode(raw);
+        if (decoded is List) _entries.addAll(decoded.whereType<Map>().map((item) {
+          final kindName = item['kind'];
+          final title = item['title'];
+          final url = item['url'];
+          final timestamp = item['timestamp'];
+          if (kindName is! String || title is! String || url is! String) return null;
+          ActivityKind? kind;
+          for (final candidate in ActivityKind.values) {
+            if (candidate.name == kindName) { kind = candidate; break; }
+          }
+          if (kind == null) return null;
+          return ActivityEntry(
+            kind: kind,
+            title: title,
+            url: url,
+            timestamp: timestamp is String ? DateTime.tryParse(timestamp) : null,
+          );
+        }).whereType<ActivityEntry>().toList().take(200));
+      }
+    } catch (_) {}
+    notifyListeners();
+  }
+
+  void log(ActivityKind kind, String title, String url) {
+    if (url.trim().isEmpty) return;
+    final now = DateTime.now();
+    if (_entries.isNotEmpty) {
+      final latest = _entries.last;
+      if (latest.url == url && now.difference(latest.timestamp).inSeconds < 3) return;
+    }
+    _entries.add(ActivityEntry(kind: kind, title: title, url: url, timestamp: now));
+    if (_entries.length > 200) _entries.removeAt(0);
+    notifyListeners();
+    unawaited(_persist());
+  }
+
+  void removeEntries(Iterable<ActivityEntry> entries) {
+    final keys = entries.map(_activityEntryKey).toSet();
+    if (keys.isEmpty) return;
+    _entries.removeWhere((entry) => keys.contains(_activityEntryKey(entry)));
+    notifyListeners();
+    unawaited(_persist());
+  }
+
+  void clear() {
+    _entries.clear();
+    notifyListeners();
+    unawaited(_persist());
+  }
+
+  Future<void> flushPersistence() => _persist();
+
+  Future<void> _persist() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final payload = _entries.map((entry) => <String, Object?>{
+        'kind': entry.kind.name,
+        'title': entry.title,
+        'url': entry.url,
+        'timestamp': entry.timestamp.toIso8601String(),
+      }).toList();
+      await prefs.setString(_storageKey, jsonEncode(payload));
+    } catch (_) {}
+  }
+}
+
+final ActivityController activityController = ActivityController();
+
+// A aba especial do Orbit Browser mantém uma única instância persistente,
+// reutilizada em toda a navegação da aplicação (como um separador fixo).
+enum TabKind { orbitBrowser, browser, appScreen }
+
+class BrowserTab {
+  BrowserTab({
+    required this.id,
+    required this.kind,
+    required this.url,
+    this.title,
+    this.thumbnail,
+    this.isIncognito = false,
+    this.canGoBack = false,
+    this.canGoForward = false,
+    this.appScreenLabel,
+    this.appScreenIcon,
+    DateTime? lastActivity,
+  }) : lastActivity = lastActivity ?? DateTime.now();
+
+  final String id;
+  final TabKind kind;
+  String url;
+  String? title;
+  Uint8List? thumbnail;
+  final bool isIncognito;
+  bool canGoBack;
+  bool canGoForward;
+  String? appScreenLabel;
+  IconData? appScreenIcon;
+  DateTime lastActivity;
+
+  void touch() {
+    lastActivity = DateTime.now();
+  }
+}
+
+class TabsController extends ChangeNotifier {
+  static const String _storageKey = 'looply_open_tabs_v1';
+  static const String _activeStorageKey = 'looply_active_tab_v1';
+  static const String _backupStorageKey = 'looply_open_tabs_backup_v1';
+  static const String _activeBackupStorageKey = 'looply_active_tab_backup_v1';
+  final List<BrowserTab> _tabs = [];
+  String? _activeTabId;
+  final List<Future<void>> _pendingSnapshotWrites = [];
+  Timer? _persistTimer;
+
+  List<BrowserTab> get tabs => List.unmodifiable(_tabs);
+  int get count => _tabs.length;
+  String? get activeTabId => _activeTabId;
+  BrowserTab? get activeTab {
+    if (_activeTabId == null) return null;
+    for (final tab in _tabs) {
+      if (tab.id == _activeTabId) return tab;
+    }
+    return null;
+  }
+
+  Future<Directory> _tabSnapshotDirectory() async {
+    final support = await getApplicationSupportDirectory();
+    final directory = Directory('${support.path}${Platform.pathSeparator}tab_snapshots');
+    if (!await directory.exists()) await directory.create(recursive: true);
+    return directory;
+  }
+
+  String _safeTabSnapshotName(String id) =>
+      '${id.replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '_')}.png';
+
+  Future<void> restore() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final candidates = <String>[
+        prefs.getString(_storageKey) ?? '',
+        prefs.getString(_backupStorageKey) ?? '',
+      ].where((value) => value.isNotEmpty).toList(growable: false);
+
+      // Pick the newest complete snapshot by valid tab count. This also
+      // recovers when a process is killed between the primary and backup write.
+      List<dynamic> decodedTabs = const <dynamic>[];
+      var bestCount = -1;
+      for (final raw in candidates) {
+        try {
+          final decoded = jsonDecode(raw);
+          if (decoded is List) {
+            final validCount = decoded.where((item) =>
+              item is Map && item['id'] is String && item['kind'] is String && item['url'] is String
+            ).length;
+            if (validCount > bestCount) {
+              bestCount = validCount;
+              decodedTabs = decoded;
+            }
+          }
+        } catch (_) {}
+      }
+
+      if (decodedTabs.isNotEmpty) {
+        final directory = await _tabSnapshotDirectory();
+        for (final item in decodedTabs) {
+          if (item is! Map) continue;
+          final id = item['id'];
+          final kindName = item['kind'];
+          final url = item['url'];
+          if (id is! String || kindName is! String || url is! String) continue;
+          TabKind? kind;
+          for (final candidate in TabKind.values) {
+            if (candidate.name == kindName) { kind = candidate; break; }
+          }
+          if (kind == null) continue;
+          Uint8List? thumbnail;
+          final thumbnailFile = item['thumbnailFile'];
+          if (thumbnailFile is String) {
+            try {
+              final file = File('${directory.path}${Platform.pathSeparator}$thumbnailFile');
+              if (await file.exists()) thumbnail = await file.readAsBytes();
+            } catch (_) {}
+          }
+          if (thumbnail == null) {
+            final thumbnailBase64 = item['thumbnailBase64'];
+            if (thumbnailBase64 is String) {
+              try { thumbnail = base64Decode(thumbnailBase64); } catch (_) {}
+            }
+          }
+          final lastActivity = item['lastActivity'];
+          _tabs.add(BrowserTab(
+            id: id,
+            kind: kind,
+            url: url,
+            title: item['title'] is String ? item['title'] as String : null,
+            thumbnail: thumbnail,
+            appScreenLabel: item['appScreenLabel'] is String ? item['appScreenLabel'] as String : null,
+            appScreenIcon: kind == TabKind.appScreen ? _iconForRestoredScreen(url) : null,
+            lastActivity: lastActivity is String ? DateTime.tryParse(lastActivity) : null,
+          ));
+        }
+      }
+
+      // Home, Activity and Games are three screens of the same application
+      // shell, not three independent tabs. Older versions could have saved one
+      // card per screen; keep only the most recently used shell card.
+      final appScreenTabs = _tabs.where((tab) => tab.kind == TabKind.appScreen).toList();
+      if (appScreenTabs.length > 1) {
+        appScreenTabs.sort((a, b) => b.lastActivity.compareTo(a.lastActivity));
+        for (final obsolete in appScreenTabs.skip(1)) {
+          _tabs.remove(obsolete);
+          unawaited(_deleteTabSnapshot(obsolete.id));
+        }
+      }
+
+      final activeId = prefs.getString(_activeStorageKey) ??
+          prefs.getString(_activeBackupStorageKey);
+      if (activeId != null && _tabs.any((tab) =>
+          tab.id == activeId && tab.kind != TabKind.appScreen && !tab.isIncognito)) {
+        _activeTabId = activeId;
+      } else {
+        final restorableActive = _tabs.where((tab) => tab.kind != TabKind.appScreen).toList(growable: false);
+        _activeTabId = restorableActive.isEmpty ? null : restorableActive.last.id;
+      }
+    } catch (_) {
+      // Sessões corrompidas não impedem o arranque com abas vazias.
+    }
+    notifyListeners();
+  }
+
+  IconData _iconForRestoredScreen(String key) => switch (key) {
+    'home_screen' => AppIcons.house,
+    'activity_screen' => AppIcons.clockCounterClockwise,
+    'games_screen' || 'discover_screen' => AppIcons.sportsEsports,
+    _ => AppIcons.squaresFour,
+  };
+
+  String _generateTabId() =>
+      '${DateTime.now().microsecondsSinceEpoch}_${_tabs.length}_${identityHashCode(this)}';
+
+  BrowserTab createBrowserTab(String url, {String? title, bool isIncognito = false}) {
+    final tab = BrowserTab(
+      id: _generateTabId(),
+      kind: TabKind.browser,
+      url: url,
+      title: title,
+      isIncognito: isIncognito,
+    );
+    _tabs.add(tab);
+    notifyListeners();
+    if (!isIncognito) _schedulePersist();
+    return tab;
+  }
+
+  void activate(String id) {
+    if (_activeTabId == id) return;
+    _activeTabId = id;
+    final tab = getTab(id);
+    tab?.touch();
+    notifyListeners();
+    if (tab != null && !tab.isIncognito) _schedulePersist();
+  }
+
+  void updateTab(
+    String id, {
+    String? url,
+    String? title,
+    Uint8List? thumbnail,
+    bool? canGoBack,
+    bool? canGoForward,
+  }) {
+    final tab = getTab(id);
+    if (tab == null) return;
+    if (url != null) tab.url = url;
+    if (title != null) tab.title = title;
+    if (canGoBack != null) tab.canGoBack = canGoBack;
+    if (canGoForward != null) tab.canGoForward = canGoForward;
+    if (thumbnail != null) {
+      tab.thumbnail = thumbnail;
+      if (!tab.isIncognito) {
+        _trackSnapshotWrite(id, thumbnail);
+      }
+    }
+    tab.touch();
+    notifyListeners();
+
+    if (!tab.isIncognito) {
+      if (tab.kind != TabKind.appScreen && tab.url.isNotEmpty) {
+        unawaited(SessionStore.instance.saveLastPage(
+          url: tab.url,
+          title: (tab.title?.trim().isNotEmpty ?? false) ? tab.title! : tab.url,
+        ));
+      }
+      // Persist all tab kinds, including the shell-screen cards and their
+      // latest thumbnails. The lifecycle flush is only a safety net.
+      _schedulePersist();
+    }
+  }
+
+  // Reaproveita a aba fixa do Orbit Browser se já existir; caso contrário,
+  // cria-a. Só deve existir uma instância de TabKind.orbitBrowser de cada vez.
+  BrowserTab upsertOrbitBrowserTab(String? url) {
+    final existing = getOrbitBrowserTab();
+    if (existing != null) {
+      if (url != null && url.isNotEmpty) {
+        existing.url = url;
+      }
+      existing.touch();
+      notifyListeners();
+      _schedulePersist();
+      return existing;
+    }
+    final tab = BrowserTab(
+      id: _generateTabId(),
+      kind: TabKind.orbitBrowser,
+      url: url ?? '',
+    );
+    _tabs.add(tab);
+    notifyListeners();
+    _schedulePersist();
+    return tab;
+  }
+
+  // Reaproveita a única aba do shell (Home / Activity / Games), atualizando
+  // o destino, rótulo, ícone e miniatura; não cria uma aba separada por tela.
+  BrowserTab upsertAppScreenTab(
+    String screenKey,
+    String label,
+    IconData icon,
+    Uint8List? thumbnail,
+  ) {
+    // All shell destinations share one persistent tab card. Its URL records
+    // which shell screen was visible when the card was last captured.
+    final existing = getAppScreen(screenKey);
+    if (existing != null) {
+      existing.url = screenKey;
+      existing.title = label;
+      existing.appScreenLabel = label;
+      existing.appScreenIcon = icon;
+      if (thumbnail != null) {
+        existing.thumbnail = thumbnail;
+        _trackSnapshotWrite(existing.id, thumbnail);
+      }
+      existing.touch();
+      notifyListeners();
+      _schedulePersist();
+      return existing;
+    }
+    final tab = BrowserTab(
+      id: _generateTabId(),
+      kind: TabKind.appScreen,
+      url: screenKey,
+      title: label,
+      thumbnail: thumbnail,
+      appScreenLabel: label,
+      appScreenIcon: icon,
+    );
+    _tabs.add(tab);
+    if (thumbnail != null) _trackSnapshotWrite(tab.id, thumbnail);
+    notifyListeners();
+    _schedulePersist();
+    return tab;
+  }
+
+  void _trackSnapshotWrite(String id, Uint8List bytes) {
+    final pending = _saveTabSnapshot(id, bytes);
+    _pendingSnapshotWrites.add(pending);
+    unawaited(pending.whenComplete(() => _pendingSnapshotWrites.remove(pending)));
+  }
+
+  Future<void> _saveTabSnapshot(String id, Uint8List bytes) async {
+    try {
+      final directory = await _tabSnapshotDirectory();
+      final file = File('${directory.path}${Platform.pathSeparator}${_safeTabSnapshotName(id)}');
+      await file.writeAsBytes(bytes, flush: true);
+    } catch (_) {
+      // A grelha continua a funcionar com a miniatura em memória se o disco falhar.
+    }
+  }
+
+  Future<void> _deleteTabSnapshot(String id) async {
+    try {
+      if (_pendingSnapshotWrites.isNotEmpty) {
+        await Future.wait<void>(_pendingSnapshotWrites.toList(growable: false));
+      }
+      final directory = await _tabSnapshotDirectory();
+      final file = File('${directory.path}${Platform.pathSeparator}${_safeTabSnapshotName(id)}');
+      if (await file.exists()) await file.delete();
+    } catch (_) {}
+  }
+
+  Future<void> clearStoredSnapshots() async {
+    try {
+      if (_pendingSnapshotWrites.isNotEmpty) {
+        await Future.wait<void>(_pendingSnapshotWrites.toList(growable: false));
+      }
+      final directory = await _tabSnapshotDirectory();
+      if (await directory.exists()) {
+        await for (final entity in directory.list(followLinks: false)) {
+          if (entity is File && entity.path.toLowerCase().endsWith('.png')) {
+            await entity.delete();
+          }
+        }
+      }
+    } catch (_) {}
+  }
+
+  void closeTab(String id) {
+    _tabs.removeWhere((tab) => tab.id == id);
+    unawaited(_deleteTabSnapshot(id));
+    if (_activeTabId == id) {
+      _activeTabId = _tabs.where((tab) => tab.kind != TabKind.appScreen).isNotEmpty
+          ? _tabs.firstWhere((tab) => tab.kind != TabKind.appScreen).id
+          : null;
+    }
+    notifyListeners();
+    _schedulePersist();
+  }
+
+  void reorderById(String movingId, String targetId) {
+    final from = _tabs.indexWhere((tab) => tab.id == movingId);
+    final target = _tabs.indexWhere((tab) => tab.id == targetId);
+    if (from < 0 || target < 0 || from == target) return;
+
+    final moving = _tabs.removeAt(from);
+    // Depois da remoção, o índice do alvo desloca-se quando o cartão veio
+    // de uma posição anterior. Inserir imediatamente antes do alvo deixa
+    // os restantes cartões preencherem o espaço com AnimatedPositioned.
+    final destination = from < target ? target - 1 : target;
+    final safeDestination = destination.clamp(0, _tabs.length).toInt();
+    _tabs.insert(safeDestination, moving);
+    notifyListeners();
+    _schedulePersist();
+  }
+
+  void closeTabs(Iterable<String> ids) {
+    final removed = ids.toSet();
+    if (removed.isEmpty) return;
+    _tabs.removeWhere((tab) => removed.contains(tab.id));
+    for (final id in removed) { unawaited(_deleteTabSnapshot(id)); }
+    if (_activeTabId != null && removed.contains(_activeTabId)) {
+      final remaining = _tabs.where((tab) => tab.kind != TabKind.appScreen).toList(growable: false);
+      _activeTabId = remaining.isEmpty ? null : remaining.first.id;
+    }
+    notifyListeners();
+    _schedulePersist();
+  }
+
+  void closeAllTabs() {
+    for (final tab in _tabs) { unawaited(_deleteTabSnapshot(tab.id)); }
+    _tabs.clear();
+    _activeTabId = null;
+    notifyListeners();
+    _schedulePersist();
+  }
+
+  BrowserTab? getTab(String id) {
+    for (final tab in _tabs) {
+      if (tab.id == id) return tab;
+    }
+    return null;
+  }
+
+  BrowserTab? getAppScreen(String screenKey) {
+    // There is a single card for the whole shell (Home / Activity / Games).
+    if (screenKey.isEmpty) return null;
+    for (final tab in _tabs) {
+      if (tab.kind == TabKind.appScreen) return tab;
+    }
+    return null;
+  }
+
+  BrowserTab? getOrbitBrowserTab() {
+    for (final tab in _tabs) {
+      if (tab.kind == TabKind.orbitBrowser) return tab;
+    }
+    return null;
+  }
+
+  Future<void> flushPersistence() {
+    _persistTimer?.cancel();
+    return _persistNow();
+  }
+
+  void _schedulePersist() {
+    _persistTimer?.cancel();
+    _persistTimer = Timer(const Duration(milliseconds: 70), _persistNow);
+  }
+
+  Future<void> _persistNow() async {
+    try {
+      if (_pendingSnapshotWrites.isNotEmpty) {
+        await Future.wait<void>(_pendingSnapshotWrites.toList(growable: false));
+      }
+      final prefs = await SharedPreferences.getInstance();
+      final payload = _tabs
+          .where((tab) => !tab.isIncognito)
+          .map((tab) {
+            final thumbnail = tab.thumbnail;
+            return <String, Object?>{
+              'id': tab.id,
+              'kind': tab.kind.name,
+              'url': tab.url,
+              'title': tab.title,
+              'appScreenLabel': tab.appScreenLabel,
+              'thumbnailFile': thumbnail != null ? _safeTabSnapshotName(tab.id) : null,
+              'thumbnailBase64': thumbnail != null && thumbnail.length <= 70000
+                  ? base64Encode(thumbnail)
+                  : null,
+              'lastActivity': tab.lastActivity.toIso8601String(),
+            };
+          })
+          .toList();
+      final encoded = jsonEncode(payload);
+      // Keep two independent snapshots. The backup is intentionally written
+      // after the main key and is used if a device/process interruption leaves
+      // one preference stale or malformed.
+      await prefs.setString(_storageKey, encoded);
+      await prefs.setString(_backupStorageKey, encoded);
+      if (_activeTabId == null || !_tabs.any((tab) => tab.id == _activeTabId && tab.kind != TabKind.appScreen && !tab.isIncognito)) {
+        await prefs.remove(_activeStorageKey);
+        await prefs.remove(_activeBackupStorageKey);
+      } else {
+        await prefs.setString(_activeStorageKey, _activeTabId!);
+        await prefs.setString(_activeBackupStorageKey, _activeTabId!);
+      }
+    } catch (_) {}
+  }
+
+  @override
+  void dispose() {
+    _persistTimer?.cancel();
+    unawaited(_persistNow());
+    super.dispose();
+  }
+}
+
+final TabsController tabsController = TabsController();
+
+class LooplyGame {
+  const LooplyGame({required this.title, required this.category, required this.players, required this.artColor, required this.index, required this.description, this.url});
+  final String title;
+  final String category;
+  final String players;
+  final Color artColor;
+  final int index;
+  final String description;
+  final String? url;
+}
+
+const List<LooplyGame> looplyGames = [
+  LooplyGame(
+    title: 'Zombie Rush', category: 'Ação', players: '—', artColor: Color(0xFF1D76D2), index: 0,
+    description: 'Sobrevive à horda de zombies nesta experiência jogável diretamente na app.',
+    url: 'https://raw.githubusercontent.com/CoolDude2349/Offline-HTML-Games-Pack/refs/heads/master/offline/zombie-rush.html',
+  ),
+];
+
+enum DownloadStatus { pending, downloading, completed, failed }
+
+class DownloadEntry {
+  DownloadEntry({
+    required this.id,
+    required this.url,
+    required this.filename,
+    this.mimeType,
+    this.localPath,
+    this.status = DownloadStatus.pending,
+    this.progress = 0,
+    this.errorMessage,
+    DateTime? createdAt,
+  }) : createdAt = createdAt ?? DateTime.now();
+
+  final String id;
+  final String url;
+  String filename;
+  String? mimeType;
+  String? localPath;
+  DownloadStatus status;
+  double progress;
+  String? errorMessage;
+  final DateTime createdAt;
+
+  static const Map<String, List<String>> _extensionGroups = {
+    'image': ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.avif', '.heic', '.heif', '.bmp', '.svg'],
+    'video': ['.mp4', '.mov', '.mkv', '.webm', '.avi', '.m4v'],
+    'audio': ['.mp3', '.wav', '.m4a', '.ogg', '.flac', '.aac'],
+    'archive': ['.zip', '.rar', '.7z', '.tar', '.gz', '.bz2', '.xz', '.apk', '.jar', '.epub'],
+    'code': ['.dart', '.js', '.ts', '.py', '.java', '.kt', '.html', '.css',
+             '.json', '.xml', '.yaml', '.yml', '.c', '.cpp', '.h', '.swift'],
+    'pdf': ['.pdf'],
+    'doc': ['.doc', '.docx', '.txt', '.rtf'],
+  };
+
+  String get _extension {
+    final lower = filename.toLowerCase();
+    final dot = lower.lastIndexOf('.');
+    return dot < 0 ? '' : lower.substring(dot);
+  }
+
+  bool _isGroup(String group) => _extensionGroups[group]!.contains(_extension);
+
+  bool get isImage => _isGroup('image');
+  bool get isVideo => _isGroup('video');
+  bool get isAudio => _isGroup('audio');
+  bool get isArchive => _isGroup('archive');
+  bool get isCode => _isGroup('code');
+  bool get isPdf => _isGroup('pdf');
+  bool get isDocument => _isGroup('doc');
+
+  IconData get icon {
+    if (isImage) return AppIcons.image;
+    if (isVideo) return AppIcons.browser;
+    if (isAudio) return AppIcons.microphone;
+    if (isArchive) return AppIcons.downloadSimple;
+    if (isCode) return AppIcons.list;
+    if (isPdf) return AppIcons.fileArrowUp;
+    if (isDocument) return AppIcons.fileArrowUp;
+    return AppIcons.fileArrowUp;
+  }
+
+  bool get canOpenLocally =>
+      status == DownloadStatus.completed && localPath != null && localPath!.isNotEmpty;
+}
+
+/// Controla downloads reais: faz a requisição HTTP, grava os bytes em disco
+/// na pasta de documentos da app, e acompanha o progresso em tempo real.
+/// Antes desta classe, o app só registava que uma URL de download tinha sido
+/// detectada pelo WebView — nenhum byte era de facto transferido nem gravado.
+class DownloadsController extends ChangeNotifier {
+  static const String _storageKey = 'looply_downloads_v1';
+  final List<DownloadEntry> _entries = [];
+  final Map<String, http.Client> _activeClients = {};
+  Timer? _persistTimer;
+  bool _nativeBridgeAttached = false;
+
+  static const MethodChannel _nativeDownloadChannel = MethodChannel('looply/native_downloads');
+
+  List<DownloadEntry> get entries => List.unmodifiable(_entries.reversed);
+
+  Future<Directory> _downloadsDirectory() async {
+    final support = await getApplicationDocumentsDirectory();
+    final directory = Directory('${support.path}${Platform.pathSeparator}downloads');
+    if (!await directory.exists()) await directory.create(recursive: true);
+    return directory;
+  }
+
+  String _generateId() => '${DateTime.now().microsecondsSinceEpoch}_${_entries.length}';
+
+  String _safeFileName(String filename, String id) {
+    final cleaned = filename.replaceAll(RegExp(r'[^a-zA-Z0-9._-]'), '_');
+    return cleaned.isEmpty ? id : '${id}_$cleaned';
+  }
+
+  Future<void> restore() async {
+    _entries.clear();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_storageKey);
+      if (raw != null && raw.isNotEmpty) {
+        final decoded = jsonDecode(raw);
+        if (decoded is List) {
+          for (final item in decoded) {
+            if (item is! Map) continue;
+            final id = item['id'];
+            final url = item['url'];
+            final filename = item['filename'];
+            if (id is! String || url is! String || filename is! String) continue;
+            final localPath = item['localPath'] is String ? item['localPath'] as String : null;
+            // Um download marcado como concluído cujo ficheiro já não existe
+            // no disco (ex: app reinstalada, cache limpa) é reclassificado
+            // como falhado, para não oferecer abrir um ficheiro inexistente.
+            var status = DownloadStatus.values.firstWhere(
+              (value) => value.name == item['status'],
+              orElse: () => DownloadStatus.failed,
+            );
+            if (status == DownloadStatus.completed) {
+              final exists = localPath != null && await File(localPath).exists();
+              if (!exists) status = DownloadStatus.failed;
+            }
+            _entries.add(DownloadEntry(
+              id: id,
+              url: url,
+              filename: filename,
+              mimeType: item['mimeType'] is String ? item['mimeType'] as String : null,
+              localPath: localPath,
+              status: status,
+              progress: status == DownloadStatus.completed ? 1 : 0,
+              createdAt: item['createdAt'] is String ? DateTime.tryParse(item['createdAt'] as String) : null,
+            ));
+          }
+        }
+      }
+    } catch (_) {
+      // Downloads corrompidos não impedem a abertura do navegador.
+    }
+    _attachNativeDownloadBridge();
+    notifyListeners();
+  }
+
+  void _attachNativeDownloadBridge() {
+    if (_nativeBridgeAttached) return;
+    _nativeBridgeAttached = true;
+    _nativeDownloadChannel.setMethodCallHandler((call) async {
+      if (call.method != 'downloadRequested') return null;
+      final raw = call.arguments;
+      if (raw is! Map) return null;
+      final url = raw['url']?.toString() ?? '';
+      if (url.isEmpty) return null;
+      final rawHeaders = raw['headers'];
+      final headers = <String, String>{};
+      if (rawHeaders is Map) {
+        for (final entry in rawHeaders.entries) {
+          if (entry.key is String && entry.value != null) {
+            headers[entry.key as String] = entry.value.toString();
+          }
+        }
+      }
+      register(
+        url: url,
+        filename: raw['filename']?.toString(),
+        mimeType: raw['mimeType']?.toString(),
+        requestHeaders: headers,
+      );
+      return true;
+    });
+    // Confirma ao Kotlin que o handler Dart já está instalado. Pedidos feitos
+    // antes deste ponto ficam em fila nativa e são entregues após o ping.
+    unawaited(_nativeDownloadChannel.invokeMethod<bool>('ping').then<void>((_) {}).catchError((Object _) {}));
+  }
+
+  /// Ponto de entrada chamado pelo onDownloadStartRequest do WebView.
+  /// Cria a entrada, dispara o download real em segundo plano e devolve
+  /// imediatamente — a UI acompanha o progresso através dos listeners.
+  String register({
+    required String url,
+    String? filename,
+    String? mimeType,
+    Map<String, String>? requestHeaders,
+  }) {
+    final id = _generateId();
+    final resolvedName = (filename?.trim().isNotEmpty ?? false)
+        ? filename!.trim()
+        : _filenameFromUrl(url);
+    final entry = DownloadEntry(
+      id: id,
+      url: url,
+      filename: resolvedName,
+      mimeType: mimeType,
+      status: DownloadStatus.pending,
+    );
+    _entries.add(entry);
+    notifyListeners();
+    unawaited(_download(entry, requestHeaders: requestHeaders ?? const <String, String>{}));
+    _schedulePersist();
+    return id;
+  }
+
+  String _filenameFromUrl(String url) {
+    try {
+      final uri = Uri.parse(url);
+      final last = uri.pathSegments.isNotEmpty ? uri.pathSegments.last : '';
+      if (last.trim().isNotEmpty) return last;
+    } catch (_) {}
+    return 'ficheiro_${DateTime.now().millisecondsSinceEpoch}';
+  }
+
+
+  String? _filenameFromContentDisposition(String? header) {
+    if (header == null || header.trim().isEmpty) return null;
+    final extended = RegExp(r"filename\*\s*=\s*(?:UTF-8''|[^']*'[^']*'')?([^;]+)", caseSensitive: false)
+        .firstMatch(header)
+        ?.group(1);
+    final plain = RegExp(r'filename\s*=\s*"?([^";]+)', caseSensitive: false)
+        .firstMatch(header)
+        ?.group(1);
+    var value = (extended ?? plain)?.trim();
+    if (value == null || value.isEmpty) return null;
+    if (value.startsWith('"') || value.startsWith("'")) value = value.substring(1);
+    if (value.endsWith('"') || value.endsWith("'")) value = value.substring(0, value.length - 1);
+    try {
+      value = Uri.decodeComponent(value);
+    } catch (_) {}
+    value = value!.split('/').last.split('\\').last.trim();
+    return value.isEmpty ? null : value;
+  }
+
+  String? _usableMimeType(String? raw) {
+    final value = raw?.split(';').first.trim().toLowerCase();
+    if (value == null ||
+        value.isEmpty ||
+        value == 'application/octet-stream' ||
+        value == 'binary/octet-stream' ||
+        value == 'application/download' ||
+        value == 'application/x-download' ||
+        value == '*/*') {
+      return null;
+    }
+    return value.contains('/') ? value : null;
+  }
+
+  String? _mimeFromExtension(String filename) => _guessMimeType(filename);
+
+  String? _extensionForMime(String? mime) {
+    const extensions = <String, String>{
+      'image/jpeg': '.jpg',
+      'image/png': '.png',
+      'image/gif': '.gif',
+      'image/webp': '.webp',
+      'image/avif': '.avif',
+      'image/heic': '.heic',
+      'image/bmp': '.bmp',
+      'image/svg+xml': '.svg',
+      'video/mp4': '.mp4',
+      'video/webm': '.webm',
+      'video/quicktime': '.mov',
+      'audio/mpeg': '.mp3',
+      'audio/mp4': '.m4a',
+      'audio/wav': '.wav',
+      'audio/ogg': '.ogg',
+      'audio/flac': '.flac',
+      'application/pdf': '.pdf',
+      'application/zip': '.zip',
+      'application/x-rar-compressed': '.rar',
+      'application/vnd.rar': '.rar',
+      'application/x-7z-compressed': '.7z',
+      'application/x-tar': '.tar',
+      'application/wasm': '.wasm',
+      'application/x-sqlite3': '.sqlite',
+      'application/rtf': '.rtf',
+      'application/gzip': '.gz',
+      'application/x-gzip': '.gz',
+      'application/vnd.android.package-archive': '.apk',
+      'application/json': '.json',
+      'application/xml': '.xml',
+      'text/xml': '.xml',
+      'text/html': '.html',
+      'text/plain': '.txt',
+      'text/css': '.css',
+      'text/javascript': '.js',
+      'application/javascript': '.js',
+      'application/msword': '.doc',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '.docx',
+      'application/vnd.ms-excel': '.xls',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': '.xlsx',
+      'application/vnd.ms-powerpoint': '.ppt',
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation': '.pptx',
+    };
+    return extensions[mime?.toLowerCase()];
+  }
+
+  String _correctDownloadFilename(String rawName, String? mime) {
+    var name = rawName.trim().split('/').last.split('\\').last;
+    name = name.replaceAll(RegExp(r'[\x00-\x1F]'), '').trim();
+    if (name.isEmpty) name = 'ficheiro_${DateTime.now().millisecondsSinceEpoch}';
+    final expectedExtension = _extensionForMime(mime);
+    if (expectedExtension == null) return name;
+
+    final dot = name.lastIndexOf('.');
+    final currentExtension = dot >= 0 ? name.substring(dot).toLowerCase() : '';
+    const genericExtensions = <String>{'.bin', '.dat', '.download', '.tmp', '.file'};
+    final currentMime = _mimeFromExtension(name);
+    if (currentExtension.isEmpty ||
+        genericExtensions.contains(currentExtension) ||
+        (currentMime != null && currentMime != mime)) {
+      final base = dot > 0 ? name.substring(0, dot) : name;
+      return '$base$expectedExtension';
+    }
+    return name;
+  }
+
+  String? _sniffMimeType(List<int> bytes) {
+    bool starts(List<int> signature) => bytes.length >= signature.length &&
+        List<int>.generate(signature.length, (i) => bytes[i]).toString() == signature.toString();
+    bool asciiAt(int offset, String text) {
+      final signature = text.codeUnits;
+      return bytes.length >= offset + signature.length &&
+          List<int>.generate(signature.length, (i) => bytes[offset + i]).toString() == signature.toString();
+    }
+
+    if (starts(const <int>[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A])) return 'image/png';
+    if (starts(const <int>[0xFF, 0xD8, 0xFF])) return 'image/jpeg';
+    if (starts(const <int>[0x37, 0x7A, 0xBC, 0xAF, 0x27, 0x1C])) return 'application/x-7z-compressed';
+    if (asciiAt(0, 'Rar!')) return 'application/vnd.rar';
+    if (starts(const <int>[0x1F, 0x8B])) return 'application/gzip';
+    if (asciiAt(0, '\x00asm')) return 'application/wasm';
+    if (asciiAt(0, 'SQLite format 3\x00')) return 'application/x-sqlite3';
+    if (asciiAt(0, '{\\rtf') || asciiAt(0, '{\\RTF')) return 'application/rtf';
+    if (asciiAt(257, 'ustar')) return 'application/x-tar';
+    if (asciiAt(0, 'GIF87a') || asciiAt(0, 'GIF89a')) return 'image/gif';
+    if (asciiAt(0, 'RIFF') && asciiAt(8, 'WEBP')) return 'image/webp';
+    if (asciiAt(0, 'BM')) return 'image/bmp';
+    if (asciiAt(0, '%PDF-')) return 'application/pdf';
+    if (asciiAt(0, 'PK\x03\x04') || asciiAt(0, 'PK\x05\x06') || asciiAt(0, 'PK\x07\x08')) return 'application/zip';
+    if (asciiAt(4, 'ftyp')) {
+      if (asciiAt(8, 'avif') || asciiAt(8, 'avis')) return 'image/avif';
+      if (asciiAt(8, 'heic') || asciiAt(8, 'heix') || asciiAt(8, 'hevc')) return 'image/heic';
+      if (asciiAt(8, 'M4A ') || asciiAt(8, 'M4B ')) return 'audio/mp4';
+      return 'video/mp4';
+    }
+    if (asciiAt(0, 'OggS')) return 'audio/ogg';
+    if (asciiAt(0, 'ID3')) return 'audio/mpeg';
+    if (asciiAt(0, 'fLaC')) return 'audio/flac';
+    if (asciiAt(0, 'RIFF') && asciiAt(8, 'WAVE')) return 'audio/wav';
+
+    final prefix = String.fromCharCodes(bytes.take(256)).trimLeft().toLowerCase();
+    if (prefix.startsWith('<svg') || (prefix.startsWith('<?xml') && prefix.contains('<svg'))) return 'image/svg+xml';
+    return null;
+  }
+
+  Future<void> _download(
+    DownloadEntry entry, {
+    Map<String, String> requestHeaders = const <String, String>{},
+  }) async {
+    final client = http.Client();
+    _activeClients[entry.id] = client;
+    entry.status = DownloadStatus.downloading;
+    notifyListeners();
+
+    File? temporaryFile;
+    IOSink? sink;
+    try {
+      final request = http.Request('GET', Uri.parse(entry.url));
+      request.headers.addAll(requestHeaders);
+      final response = await client.send(request);
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw HttpException('HTTP ${response.statusCode}');
+      }
+
+      final responseFilename = _filenameFromContentDisposition(response.headers['content-disposition']);
+      final headerName = responseFilename ?? entry.filename;
+      final headerMime = _usableMimeType(response.headers['content-type']) ??
+          _usableMimeType(entry.mimeType) ??
+          _mimeFromExtension(headerName);
+
+      final directory = await _downloadsDirectory();
+      temporaryFile = File('${directory.path}${Platform.pathSeparator}${entry.id}.part');
+      if (await temporaryFile.exists()) await temporaryFile.delete();
+      sink = temporaryFile.openWrite();
+
+      final total = response.contentLength ?? 0;
+      var received = 0;
+      var lastNotify = DateTime.now();
+      final signature = <int>[];
+
+      await response.stream.listen(
+        (chunk) {
+          sink!.add(chunk);
+          if (signature.length < 1024) signature.addAll(chunk.take(1024 - signature.length));
+          received += chunk.length;
+          if (total > 0) {
+            entry.progress = (received / total).clamp(0.0, 1.0);
+            final now = DateTime.now();
+            if (now.difference(lastNotify).inMilliseconds > 120) {
+              lastNotify = now;
+              notifyListeners();
+            }
+          }
+        },
+        onError: (Object error) => throw error,
+        cancelOnError: true,
+      ).asFuture<void>();
+
+      await sink.flush();
+      await sink.close();
+      sink = null;
+
+      // Assinaturas reais prevalecem sobre MIME genérico. Formatos Office,
+      // APK, EPUB e semelhantes também usam contêiner ZIP, portanto a extensão
+      // específica já conhecida deve ser preservada nesses casos.
+      final sniffedMime = _sniffMimeType(signature);
+      final extensionMime = _mimeFromExtension(headerName);
+      final headerSpecificExtension = _extensionForMime(headerMime);
+      final resolvedMime = sniffedMime == 'application/zip'
+          ? (extensionMime != null && extensionMime != 'application/zip'
+              ? extensionMime
+              : headerSpecificExtension != null && headerMime != 'application/zip'
+                  ? headerMime
+                  : sniffedMime)
+          : sniffedMime ?? headerMime ?? extensionMime;
+      final canonicalName = _correctDownloadFilename(headerName, resolvedMime);
+      final finalName = _safeFileName(canonicalName, entry.id);
+      final finalFile = File('${directory.path}${Platform.pathSeparator}$finalName');
+      if (await finalFile.exists()) await finalFile.delete();
+      final savedFile = await temporaryFile.rename(finalFile.path);
+
+      entry.filename = canonicalName;
+      entry.mimeType = resolvedMime ?? entry.mimeType ?? _guessMimeType(canonicalName);
+      entry.localPath = savedFile.path;
+      entry.progress = 1;
+      entry.status = DownloadStatus.completed;
+    } catch (error) {
+      try {
+        await sink?.close();
+        if (temporaryFile != null && await temporaryFile.exists()) await temporaryFile.delete();
+      } catch (_) {}
+      entry.status = DownloadStatus.failed;
+      entry.errorMessage = error.toString();
+    } finally {
+      _activeClients.remove(entry.id);
+      client.close();
+      notifyListeners();
+      _schedulePersist();
+    }
+  }
+
+  String? _guessMimeType(String filename) {
+    final lower = filename.toLowerCase();
+    const map = {
+      '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+      '.gif': 'image/gif', '.webp': 'image/webp', '.avif': 'image/avif', '.heic': 'image/heic', '.heif': 'image/heic',
+      '.bmp': 'image/bmp', '.svg': 'image/svg+xml', '.mp4': 'video/mp4',
+      '.webm': 'video/webm', '.mov': 'video/quicktime', '.pdf': 'application/pdf',
+      '.zip': 'application/zip', '.rar': 'application/vnd.rar', '.7z': 'application/x-7z-compressed', '.tar': 'application/x-tar', '.gz': 'application/gzip', '.wasm': 'application/wasm', '.sqlite': 'application/x-sqlite3', '.rtf': 'application/rtf',
+      '.mp3': 'audio/mpeg', '.m4a': 'audio/mp4', '.wav': 'audio/wav', '.ogg': 'audio/ogg',
+      '.flac': 'audio/flac', '.txt': 'text/plain', '.json': 'application/json', '.apk': 'application/vnd.android.package-archive',
+      '.html': 'text/html', '.xml': 'application/xml', '.css': 'text/css', '.js': 'text/javascript',
+      '.doc': 'application/msword', '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      '.xls': 'application/vnd.ms-excel', '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      '.ppt': 'application/vnd.ms-powerpoint', '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    };
+    for (final entry in map.entries) {
+      if (lower.endsWith(entry.key)) return entry.value;
+    }
+    return null;
+  }
+
+  void cancel(String id) {
+    _activeClients[id]?.close();
+    _activeClients.remove(id);
+    for (final entry in _entries) {
+      if (entry.id == id && entry.status == DownloadStatus.downloading) {
+        entry.status = DownloadStatus.failed;
+        entry.errorMessage = 'Cancelado';
+      }
+    }
+    notifyListeners();
+    _schedulePersist();
+  }
+
+  Future<void> remove(String id) async {
+    final index = _entries.indexWhere((entry) => entry.id == id);
+    if (index < 0) return;
+    final entry = _entries[index];
+    _activeClients[id]?.close();
+    _activeClients.remove(id);
+    if (entry.localPath != null) {
+      try {
+        final file = File(entry.localPath!);
+        if (await file.exists()) await file.delete();
+      } catch (_) {}
+    }
+    _entries.removeAt(index);
+    notifyListeners();
+    _schedulePersist();
+  }
+
+  Future<void> clear() async {
+    for (final entry in _entries) {
+      _activeClients[entry.id]?.close();
+      if (entry.localPath != null) {
+        try {
+          final file = File(entry.localPath!);
+          if (await file.exists()) await file.delete();
+        } catch (_) {}
+      }
+    }
+    _activeClients.clear();
+    _entries.clear();
+    notifyListeners();
+    _schedulePersist();
+  }
+
+  Future<void> flushPersistence() {
+    _persistTimer?.cancel();
+    return _persistNow();
+  }
+
+  void _schedulePersist() {
+    _persistTimer?.cancel();
+    _persistTimer = Timer(const Duration(milliseconds: 70), _persistNow);
+  }
+
+  Future<void> _persistNow() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final payload = _entries.map((entry) => <String, Object?>{
+        'id': entry.id,
+        'url': entry.url,
+        'filename': entry.filename,
+        'mimeType': entry.mimeType,
+        'localPath': entry.localPath,
+        'status': entry.status.name,
+        'createdAt': entry.createdAt.toIso8601String(),
+      }).toList();
+      await prefs.setString(_storageKey, jsonEncode(payload));
+    } catch (_) {}
+  }
+
+  @override
+  void dispose() {
+    _persistTimer?.cancel();
+    for (final client in _activeClients.values) {
+      client.close();
+    }
+    unawaited(_persistNow());
+    super.dispose();
+  }
+}
+
+final DownloadsController downloadsController = DownloadsController();
