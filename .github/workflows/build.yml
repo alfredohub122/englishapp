@@ -1,6 +1,6 @@
 name: BrowseIt Android Build
 
-on:
+"on":
   push:
     branches:
       - main
@@ -99,6 +99,7 @@ jobs:
           echo "Android Gradle configuration verified (AGP 9.3.2 / Gradle 9.5.0 / built-in Kotlin)."
 
       - name: Display build environment
+        shell: bash
         run: |
           flutter --version
           java -version
@@ -110,89 +111,47 @@ jobs:
           cd "$PROJECT_DIR"
           flutter pub get
 
-      # On the first run, BROWSEIT_SECRETS_TOKEN is required so this workflow
-      # can save the generated signing key as encrypted repository Actions secrets.
-      # Later runs restore the same keystore from BROWSEIT_KEYSTORE_BASE64.
-      - name: Restore or generate persistent BrowseIt release keystore
+      - name: Validate BrowseIt release keystore from repository
         id: signing
         shell: bash
-        env:
-          BROWSEIT_KEYSTORE_BASE64: ${{ secrets.BROWSEIT_KEYSTORE_BASE64 }}
-          BROWSEIT_STORE_PASSWORD: ${{ secrets.BROWSEIT_STORE_PASSWORD }}
-          BROWSEIT_KEY_PASSWORD: ${{ secrets.BROWSEIT_KEY_PASSWORD }}
-          BROWSEIT_SECRETS_TOKEN: ${{ (github.event_name != 'pull_request') && secrets.BROWSEIT_SECRETS_TOKEN || '' }}
         run: |
           set -euo pipefail
 
+          # PROJECT_DIR is detected above: it is either "." or "looply".
+          # Therefore this resolves to android/app/... or looply/android/app/... .
           KEYSTORE_PATH="$GITHUB_WORKSPACE/$PROJECT_DIR/android/app/browseit-release.keystore"
-          mkdir -p "$(dirname "$KEYSTORE_PATH")"
+          STORE_PASSWORD='@browseit00'
+          KEY_PASSWORD='@browseit00'
+          KEY_ALIAS='browseit'
+          EXPECTED_SHA1='A4:7C:4A:F0:16:1C:28:F3:CF:6A:1C:92:9B:26:57:55:82:0A:F7:1E'
 
-          if [[ -n "$BROWSEIT_KEYSTORE_BASE64" ]]; then
-            echo "Existing BrowseIt release keystore found in GitHub Secrets. Restoring it..."
-
-            : "${BROWSEIT_STORE_PASSWORD:?BROWSEIT_STORE_PASSWORD is missing from GitHub Secrets}"
-            : "${BROWSEIT_KEY_PASSWORD:?BROWSEIT_KEY_PASSWORD is missing from GitHub Secrets}"
-
-            STORE_PASSWORD="$BROWSEIT_STORE_PASSWORD"
-            KEY_PASSWORD="$BROWSEIT_KEY_PASSWORD"
-
-            printf '%s' "$BROWSEIT_KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE_PATH"
-            chmod 600 "$KEYSTORE_PATH"
-          else
-            echo "No BrowseIt keystore found. Generating the release signing key for the first time..."
-
-            : "${BROWSEIT_SECRETS_TOKEN:?First setup requires the BROWSEIT_SECRETS_TOKEN repository secret. Create a fine-grained PAT with Actions secrets: Read and write, then add it under Settings > Secrets and variables > Actions.}"
-
-            # Requested credentials. The workflow saves them as encrypted GitHub Secrets.
-            STORE_PASSWORD='@browseit00'
-            KEY_PASSWORD='@browseit00'
-            KEY_ALIAS='browseit'
-
-            keytool -genkeypair -v \
-              -storetype JKS \
-              -keystore "$KEYSTORE_PATH" \
-              -storepass "$STORE_PASSWORD" \
-              -keypass "$KEY_PASSWORD" \
-              -alias "$KEY_ALIAS" \
-              -keyalg RSA \
-              -keysize 2048 \
-              -validity 10958 \
-              -dname "CN=BrowseIt, OU=Android, O=BrowseIt, L=Luanda, ST=Luanda, C=AO"
-
-            chmod 600 "$KEYSTORE_PATH"
-            KEYSTORE_BASE64="$(base64 -w 0 "$KEYSTORE_PATH")"
-
-            # GitHub-hosted Ubuntu runners include the GitHub CLI (gh).
-            # Save passwords first and the keystore last, so the keystore secret
-            # acts as the marker that initial signing-key setup is complete.
-            GH_TOKEN="$BROWSEIT_SECRETS_TOKEN" gh secret set BROWSEIT_STORE_PASSWORD \
-              --repo "$GITHUB_REPOSITORY" --body "$STORE_PASSWORD"
-            GH_TOKEN="$BROWSEIT_SECRETS_TOKEN" gh secret set BROWSEIT_KEY_PASSWORD \
-              --repo "$GITHUB_REPOSITORY" --body "$KEY_PASSWORD"
-            GH_TOKEN="$BROWSEIT_SECRETS_TOKEN" gh secret set BROWSEIT_KEYSTORE_BASE64 \
-              --repo "$GITHUB_REPOSITORY" --body "$KEYSTORE_BASE64"
-
-            echo "Persistent BrowseIt signing keystore saved to GitHub Actions Secrets."
-          fi
-
-          # Validate that the keystore opens and contains the expected alias.
-          KEY_INFO="$(keytool -list -v \
-            -storetype JKS \
-            -keystore "$KEYSTORE_PATH" \
-            -storepass "$STORE_PASSWORD" \
-            -alias browseit)"
-
-          ACTUAL_SHA1="$(printf '%s\n' "$KEY_INFO" | awk -F': ' '/SHA1:/{gsub(/[[:space:]]/, "", $2); print toupper($2); exit}')"
-          if [[ -z "$ACTUAL_SHA1" ]]; then
-            echo "ERROR: Could not read the BrowseIt keystore SHA-1 fingerprint."
+          if [[ ! -f "$KEYSTORE_PATH" ]]; then
+            echo "ERROR: BrowseIt keystore was not found: $PROJECT_DIR/android/app/browseit-release.keystore"
+            echo "Upload browseit-release.keystore inside the detected Flutter project at android/app/."
             exit 1
           fi
 
-          echo "BrowseIt signing keystore validated."
-          echo "Certificate SHA-1: $ACTUAL_SHA1"
-          echo "Certificate validity: 30 years (10958 days) for newly generated keys."
+          chmod 600 "$KEYSTORE_PATH"
 
-          # Mask credentials in subsequent workflow logs and pass them to build steps.
+          KEY_INFO="$(LC_ALL=C keytool -list -v \
+            -storetype JKS \
+            -keystore "$KEYSTORE_PATH" \
+            -storepass "$STORE_PASSWORD" \
+            -alias "$KEY_ALIAS")"
+
+          if ! printf '%s\n' "$KEY_INFO" | grep -qF 'Entry type: PrivateKeyEntry'; then
+            echo "ERROR: Alias '$KEY_ALIAS' is not a private-key entry."
+            exit 1
+          fi
+
+          ACTUAL_SHA1="$(printf '%s\n' "$KEY_INFO" | awk -F': ' '/SHA1:/{gsub(/[[:space:]]/, "", $2); print toupper($2); exit}')"
+          if [[ "$ACTUAL_SHA1" != "$EXPECTED_SHA1" ]]; then
+            echo "ERROR: The keystore certificate does not match the BrowseIt release key."
+            echo "Expected SHA-1: $EXPECTED_SHA1"
+            echo "Found SHA-1:    ${ACTUAL_SHA1:-not available}"
+            exit 1
+          fi
+
           echo "::add-mask::$STORE_PASSWORD"
           echo "::add-mask::$KEY_PASSWORD"
 
@@ -200,8 +159,12 @@ jobs:
             echo "BROWSEIT_KEYSTORE_PATH=$KEYSTORE_PATH"
             echo "BROWSEIT_STORE_PASSWORD=$STORE_PASSWORD"
             echo "BROWSEIT_KEY_PASSWORD=$KEY_PASSWORD"
-            echo "BROWSEIT_KEY_ALIAS=browseit"
+            echo "BROWSEIT_KEY_ALIAS=$KEY_ALIAS"
           } >> "$GITHUB_ENV"
+
+          echo "BrowseIt release keystore validated."
+          echo "SHA-1: $ACTUAL_SHA1"
+          echo "Certificate validity: November 27, 2026 to November 27, 2056."
 
       - name: Build BrowseIt APK
         shell: bash
@@ -241,14 +204,6 @@ jobs:
 
           echo "BrowseIt APKs successfully generated:"
           ls -lh "${APKS[@]}"
-
-      - name: Remove temporary keystore from runner
-        if: always()
-        shell: bash
-        run: |
-          set -euo pipefail
-          PROJECT_DIR="${PROJECT_DIR:-.}"
-          rm -f "$GITHUB_WORKSPACE/$PROJECT_DIR/android/app/browseit-release.keystore"
 
       - name: Rename APKs with run number
         id: rename
@@ -293,7 +248,7 @@ jobs:
             - `armeabi-v7a` — para aparelhos Android de 32-bit.
             - `x86_64` — para emuladores/Chromebooks Intel.
 
-            Assinatura Android mantida através de GitHub Actions Secrets.
+            Assinatura Android feita com o keystore persistente do BrowseIt.
           files: ${{ steps.rename.outputs.asset_dir }}/*.apk
           fail_on_unmatched_files: true
           make_latest: true
